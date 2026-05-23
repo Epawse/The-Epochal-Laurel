@@ -36,9 +36,13 @@ export function TopBar({
   generation,
 }: TopBarProps) {
   return (
-    <header className="sticky top-0 z-40 grid grid-cols-[auto_1fr_auto] items-center gap-8 py-4 pb-3.5 border-b border-hairline bg-[linear-gradient(180deg,rgba(26,20,16,0.92),rgba(26,20,16,0.78))] backdrop-blur-[10px] mb-6">
-      {/* Brand */}
-      <div className="flex items-baseline gap-2.5 text-gold font-serif text-base tracking-[0.16em]">
+    <header
+      className="sticky top-0 z-40 grid grid-cols-[1fr_auto] md:grid-cols-[auto_1fr_auto] items-center gap-3 md:gap-8 py-3 md:py-4 pb-3 md:pb-3.5 border-b border-hairline bg-[linear-gradient(180deg,rgba(26,20,16,0.92),rgba(26,20,16,0.78))] backdrop-blur-[10px] mb-4 md:mb-6"
+      role="banner"
+      aria-label="Game status bar"
+    >
+      {/* Brand — hidden on mobile to save space */}
+      <div className="hidden md:flex items-baseline gap-2.5 text-gold font-serif text-base tracking-[0.16em]">
         <SealStamp text="芳" size="sm" rotation={-3} />
         <span>百世流芳</span>
         <small className="ml-2.5 text-bone-mute font-latin-serif italic tracking-[0.04em] text-[13px]">
@@ -47,23 +51,23 @@ export function TopBar({
       </div>
 
       {/* Season / Year / Era */}
-      <div className="justify-self-center flex items-center gap-3.5 font-serif text-bone text-[17px] tracking-[0.18em]">
-        <span className="inline-block w-2 h-2 bg-vermillion rotate-45" />
+      <div className="flex items-center gap-2 md:gap-3.5 md:justify-self-center font-serif text-bone text-[15px] md:text-[17px] tracking-[0.12em] md:tracking-[0.18em]">
+        <span className="inline-block w-2 h-2 bg-vermillion rotate-45" aria-hidden="true" />
         <span>
           {seasonLabels[season]} · 第{year}年
         </span>
-        <span className="font-latin-serif italic text-bone-mute text-[13px] tracking-[0.04em] ml-1.5">
+        <span className="hidden md:inline font-latin-serif italic text-bone-mute text-[13px] tracking-[0.04em] ml-1.5">
           {eraLabels[era]}
         </span>
       </div>
 
       {/* Profile */}
-      <div className="flex items-center gap-3 font-mono text-[11px] text-bone-mute tracking-[0.08em]">
+      <div className="flex items-center gap-2 md:gap-3 font-mono text-[11px] text-bone-mute tracking-[0.08em]">
         <div className="flex flex-col gap-0.5 leading-snug">
-          <span className="font-serif text-base text-bone tracking-[0.08em]">
+          <span className="font-serif text-sm md:text-base text-bone tracking-[0.08em]">
             {characterName}
           </span>
-          <span>
+          <span className="hidden md:inline">
             第{generation}世 · {age}岁
           </span>
         </div>

@@ -199,7 +199,7 @@ export default function ExamPage() {
           </div>
 
           {/* Choices */}
-          <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
             {question.choices.map((choice) => (
               <div key={choice.id} className="relative">
                 <ExamChoice

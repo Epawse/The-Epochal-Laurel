@@ -8,6 +8,7 @@ import { ActionCard } from "@/components/game/ActionCard";
 import { NarrativeStrip } from "@/components/game/NarrativeStrip";
 import { CourtHint } from "@/components/game/CourtHint";
 import { EventModal } from "@/components/game/EventModal";
+import { SchemeExposureOverlay } from "@/components/game/SchemeExposureOverlay";
 import { ACTIONS } from "@/lib/game/constants";
 import type { GameState, StatChanges } from "@/lib/game/schema";
 import { advanceTurn, submitEventChoice, submitEventFreeInput, useToolAction, generateHeirsAction } from "@/lib/actions/game";
@@ -76,6 +77,7 @@ export default function PlayPage() {
   );
   const [isPending, startTransition] = useTransition();
   const [toolMessage, setToolMessage] = useState<string | null>(null);
+  const [schemeExposed, setSchemeExposed] = useState(false);
 
   // Load game state from sessionStorage on mount
   useEffect(() => {
@@ -135,6 +137,12 @@ export default function PlayPage() {
         setNarration(result.npcDialogue);
       } else {
         setNarration(result.narration);
+      }
+
+      // Detect scheme exposure
+      if (result.narration.includes("东窗事发") || result.narration.includes("败露")) {
+        setSchemeExposed(true);
+        setTimeout(() => setSchemeExposed(false), 2500);
       }
 
       // Clear deltas after animation
@@ -236,7 +244,7 @@ export default function PlayPage() {
         generation={character.generation}
       />
 
-      <div className="grid grid-cols-[320px_1fr_320px] gap-6 flex-1 min-h-0">
+      <div className="grid grid-cols-1 md:grid-cols-[320px_1fr_320px] gap-4 md:gap-6 flex-1 min-h-0">
         {/* Left Panel — Stats */}
         <aside className="flex flex-col gap-4">
           <div className={isDanger ? "grayscale-[0.6]" : ""}>
@@ -259,7 +267,7 @@ export default function PlayPage() {
           )}
 
           {/* Counter-Fate Tools (display only) */}
-          <div className="border border-dashed border-hairline p-3 opacity-50">
+          <div className="border border-dashed border-hairline p-3 opacity-50 hidden md:block">
             <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-2">
               TOOLS
             </span>
@@ -274,7 +282,7 @@ export default function PlayPage() {
         {/* Center — Actions + Narrative */}
         <main className="flex flex-col gap-4 min-w-0">
           {/* Action cards grid */}
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {ACTIONS.map((action) => (
               <ActionCard
                 key={action.id}
@@ -291,13 +299,6 @@ export default function PlayPage() {
             text={narration}
             timestamp={`${SEASON_LABELS[world.season]} · 第${world.year}年`}
           />
-
-          {/* Scheme exposure flash */}
-          {narration.includes("东窗事发") && (
-            <div className="px-4 py-3 border border-vermillion bg-[rgba(196,57,44,0.12)] font-serif text-sm text-vermillion tracking-[0.04em]">
-              东窗事发！行迹败露，名声大损。
-            </div>
-          )}
         </main>
 
         {/* Right Panel — Status */}
@@ -333,7 +334,7 @@ export default function PlayPage() {
               disabled={nextExam.seasons > 0 || hasEvent}
               onClick={() => router.push("/play/exam")}
               className="mt-3 w-full px-4 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.22em] transition-all duration-200 disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:cursor-not-allowed disabled:bg-none"
-              aria-label="Enter examination"
+              aria-label="参加考试"
             >
               参加考试
             </button>
@@ -371,6 +372,9 @@ export default function PlayPage() {
           </div>
         </aside>
       </div>
+
+      {/* Scheme Exposure Overlay */}
+      {schemeExposed && <SchemeExposureOverlay />}
 
       {/* Event Modal Overlay */}
       {hasEvent && gameState.current_event && (

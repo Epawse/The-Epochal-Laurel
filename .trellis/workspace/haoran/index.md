@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
+- **Total Sessions**: 7
 - **Last Active**: 2026-05-23
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~205 | Active |
+| `journal-1.md` | ~238 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-05-23 | Tasks 5 & 6: Exam Flow + Random Events + NPC | `14c45d8` | `main` |
 | 6 | 2026-05-23 | Task 4: Server Actions + Database + Daily Loop | `175ed77` | `main` |
 | 5 | 2026-05-23 | Tasks 2 & 3: Game Engine Core + UI Components | `e6eb520` | `main` |
 | 4 | 2026-05-23 | Task 1: Schema + Constants + Design System + Assets | `44a190d` | `main` |

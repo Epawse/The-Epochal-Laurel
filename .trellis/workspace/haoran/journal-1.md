@@ -203,3 +203,36 @@ Wired engine to UI through Server Actions and Supabase persistence. Daily loop f
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Tasks 5 & 6: Exam Flow + Random Events + NPC
+
+**Date**: 2026-05-23
+**Task**: Tasks 5 & 6: Exam Flow + Random Events + NPC
+**Branch**: `main`
+
+### Summary
+
+Implemented exam flow (E1/E2/R1 AI contracts, exam page, ResultOverlay, 3 auxiliary tools) and random event system (V1/V2/N1 contracts, EventModal, NPC creation/memory/court whims reveal). All 115 tests pass, tsc and next build clean.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `14c45d8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

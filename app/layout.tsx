@@ -1,15 +1,55 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import {
+  Noto_Serif_SC,
+  Noto_Sans_SC,
+  Ma_Shan_Zheng,
+  ZCOOL_XiaoWei,
+  Cormorant_Garamond,
+  JetBrains_Mono,
+} from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const notoSerifSC = Noto_Serif_SC({
+  weight: ["400", "500", "600", "700"],
   subsets: ["latin"],
+  variable: "--font-noto-serif-sc",
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const notoSansSC = Noto_Sans_SC({
+  weight: ["300", "400", "500", "600"],
   subsets: ["latin"],
+  variable: "--font-noto-sans-sc",
+  display: "swap",
+});
+
+const maShanZheng = Ma_Shan_Zheng({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-ma-shan-zheng",
+  display: "swap",
+});
+
+const zcoolXiaoWei = ZCOOL_XiaoWei({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-zcool-xiaowei",
+  display: "swap",
+});
+
+const cormorantGaramond = Cormorant_Garamond({
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+  subsets: ["latin"],
+  variable: "--font-cormorant",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  weight: ["400", "500"],
+  subsets: ["latin"],
+  variable: "--font-jetbrains-mono",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -26,7 +66,7 @@ export default function RootLayout({
   return (
     <html
       lang="zh-CN"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${notoSerifSC.variable} ${notoSansSC.variable} ${maShanZheng.variable} ${zcoolXiaoWei.variable} ${cormorantGaramond.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

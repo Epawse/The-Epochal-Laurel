@@ -3,6 +3,9 @@
 // reusing the shared sub-schemas below.
 
 import { z } from "zod";
+import type { Era, Season, EventType } from "../game/constants";
+
+export type { Era, Season, EventType } from "../game/constants";
 
 // A stat delta the AI *proposes*. The engine owns final clamping to the
 // data-model.md Stat Boundaries — this schema validates shape only (integers).
@@ -45,11 +48,6 @@ export function extractJsonObject(raw: string): string {
   if (start >= 0 && end > start) return s.slice(start, end + 1);
   return s;
 }
-
-// Enums (will move to lib/game/constants.ts when the engine layer lands).
-export type EventType = "opportunity" | "misfortune" | "social" | "political";
-export type Era = "prosperity" | "decline" | "invasion" | "restoration";
-export type Season = "spring" | "summer" | "autumn" | "winter";
 
 // V1 input — built by the engine (ai-contracts.md V1 Input).
 export interface V1Input {

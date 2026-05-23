@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/game-design/data-model.md", "reason": "Verify schema.ts matches every field in the authoritative data model"}
+{"file": ".trellis/spec/game-design/balance.md", "reason": "Verify constants.ts origin modifiers and numerical values match spec exactly"}
+{"file": ".trellis/spec/frontend/design-tokens.md", "reason": "Verify all 19 colors, 5 font stacks, semantic aliases are registered"}
+{"file": ".trellis/spec/frontend/motion-patterns.md", "reason": "Verify keyframes match spec definitions"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Verify file placement follows conventions"}
+{"file": ".trellis/tasks/05-23-schema-constants-design-system-assets/prd.md", "reason": "Verify all acceptance criteria are met"}

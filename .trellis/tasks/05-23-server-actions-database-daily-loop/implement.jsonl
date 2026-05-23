@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "File layout for lib/db/, lib/actions/, server action patterns"}
+{"file": ".trellis/spec/frontend/screen-map.md", "reason": "Daily Loop screen layout, asset dependencies, server/client rendering split"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "State split rules — server-authoritative, no client-side game logic"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Server vs client components, props typing from schema"}
+{"file": ".trellis/spec/game-design/balance.md", "reason": "Action effects, exam schedule, drive decay — needed for advanceTurn logic"}
+{"file": ".trellis/spec/game-design/core-loop.md", "reason": "Game flow context — daily loop cycle, action→narration→event trigger"}
+{"file": ".trellis/tasks/05-23-server-actions-database-daily-loop/prd.md", "reason": "Task requirements and acceptance criteria"}

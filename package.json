@@ -12,6 +12,8 @@
     "test:llm": "tsx scripts/test-llm.ts"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.106.1",
     "framer-motion": "^12.40.0",
     "next": "16.2.6",
     "openai": "^6.39.0",

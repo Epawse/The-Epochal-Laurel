@@ -1,12 +1,289 @@
+"use client";
+
+import { useState, useEffect, useTransition } from "react";
+import { TopBar } from "@/components/game/TopBar";
+import { StatPanel } from "@/components/game/StatPanel";
+import { ActionCard } from "@/components/game/ActionCard";
+import { NarrativeStrip } from "@/components/game/NarrativeStrip";
+import { CourtHint } from "@/components/game/CourtHint";
+import { ACTIONS } from "@/lib/game/constants";
+import type { GameState, StatChanges } from "@/lib/game/schema";
+import { advanceTurn } from "@/lib/actions/game";
+
+const ACTION_ICONS: Record<string, string> = {
+  study: "/assets/action-study.png",
+  socialize: "/assets/action-socialize.png",
+  earn: "/assets/action-earn.png",
+  rest: "/assets/action-rest.png",
+  scheme: "/assets/action-scheme.png",
+};
+
+const SEASON_LABELS: Record<string, string> = {
+  spring: "春",
+  summer: "夏",
+  autumn: "秋",
+  winter: "冬",
+};
+
+const ERA_LABELS: Record<string, string> = {
+  prosperity: "盛世",
+  decline: "衰世",
+  invasion: "乱世",
+  restoration: "中兴",
+};
+
+function getPortraitSrc(age: number): string {
+  if (age >= 55) return "/assets/scholar-old.png";
+  if (age >= 35) return "/assets/scholar-middle.png";
+  return "/assets/scholar-young.png";
+}
+
+function getHighestTitle(titles: string[]): string {
+  const titleOrder = ["状元", "探花", "榜眼", "进士", "贡士", "举人", "秀才"];
+  for (const t of titleOrder) {
+    if (titles.includes(t)) return t;
+  }
+  return "白身";
+}
+
+function getNextExamCountdown(examSchedule: {
+  next_county: number;
+  next_provincial: number;
+  next_metropolitan: number;
+}): { label: string; seasons: number } {
+  const entries: { label: string; seasons: number }[] = [
+    { label: "童试", seasons: examSchedule.next_county },
+    { label: "乡试", seasons: examSchedule.next_provincial },
+    { label: "会试", seasons: examSchedule.next_metropolitan },
+  ];
+  // Return the nearest upcoming exam
+  const upcoming = entries
+    .filter((e) => e.seasons > 0)
+    .sort((a, b) => a.seasons - b.seasons);
+  return upcoming[0] ?? { label: "无", seasons: 0 };
+}
+
 export default function PlayPage() {
+  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [deltas, setDeltas] = useState<Partial<StatChanges>>({});
+  const [narration, setNarration] = useState(
+    "新的一天开始了。准备好踏上科举之路吧。"
+  );
+  const [isPending, startTransition] = useTransition();
+
+  // Load game state from sessionStorage on mount
+  useEffect(() => {
+    const stored = sessionStorage.getItem("game_state");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as GameState;
+        setGameState(parsed);
+      } catch {
+        // Invalid stored state, ignore
+      }
+    }
+  }, []);
+
+  // Persist game state to sessionStorage on change
+  useEffect(() => {
+    if (gameState) {
+      sessionStorage.setItem("game_state", JSON.stringify(gameState));
+    }
+  }, [gameState]);
+
+  // If no game state, show loading/redirect message
+  if (!gameState) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-4">
+        <p className="font-serif text-lg text-bone-mute tracking-[0.18em]">
+          尚未开始游戏
+        </p>
+        <a
+          href="/create"
+          className="px-6 py-2.5 bg-paper-2 border border-hairline font-serif text-bone tracking-[0.12em] hover:border-gold-dim transition-colors"
+        >
+          前往创建角色
+        </a>
+      </div>
+    );
+  }
+
+  const { character, world, dynasty } = gameState;
+  const highestTitle = getHighestTitle(character.titles);
+  const portraitSrc = getPortraitSrc(character.age);
+  const isDanger = character.stats.drive <= 25;
+  const nextExam = getNextExamCountdown(world.exam_schedule);
+  const isInvasion = world.era === "invasion";
+
+  function handleAction(actionId: string) {
+    if (!gameState || isPending) return;
+
+    startTransition(async () => {
+      const result = await advanceTurn(gameState, actionId);
+      setGameState(result.state);
+      setDeltas(result.statChanges);
+      setNarration(result.narration);
+
+      // Clear deltas after animation
+      setTimeout(() => setDeltas({}), 1500);
+    });
+  }
+
   return (
-    <div className="max-w-[1440px] mx-auto px-8 pb-8 min-h-screen flex flex-col items-center justify-center">
-      <p className="font-serif text-lg text-bone-mute tracking-[0.18em]">
-        日常经营 — 待实现
-      </p>
-      <p className="font-mono text-xs text-bone-mute tracking-[0.12em] mt-2">
-        DAILY LOOP — PLACEHOLDER (Task 4)
-      </p>
-    </div>
+    <>
+      {/* Era-conditional background */}
+      <div
+        className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat opacity-[0.08]"
+        style={{
+          backgroundImage: `url(${isInvasion ? "/assets/study-room--invasion.png" : "/assets/study-room.png"})`,
+        }}
+        aria-hidden="true"
+      />
+
+      <TopBar
+        season={world.season}
+        year={world.year}
+        era={world.era}
+        characterName={character.name}
+        title={highestTitle}
+        age={character.age}
+        generation={character.generation}
+      />
+
+      <div className="grid grid-cols-[320px_1fr_320px] gap-6 flex-1 min-h-0">
+        {/* Left Panel — Stats */}
+        <aside className="flex flex-col gap-4">
+          <div className={isDanger ? "grayscale-[0.6]" : ""}>
+            <StatPanel
+              portraitSrc={portraitSrc}
+              name={character.name}
+              age={character.age}
+              stats={character.stats}
+              deltas={deltas}
+            />
+          </div>
+
+          {/* Drive danger warning */}
+          {isDanger && (
+            <div className="px-3 py-2.5 border border-vermillion bg-[rgba(196,57,44,0.08)] animate-[danger-pulse_2s_ease-in-out_infinite]">
+              <p className="font-serif text-xs text-vermillion tracking-[0.06em] leading-relaxed">
+                心力将竭，若不休养，恐将油尽灯枯...
+              </p>
+            </div>
+          )}
+
+          {/* Counter-Fate Tools (display only) */}
+          <div className="border border-dashed border-hairline p-3 opacity-50">
+            <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-2">
+              TOOLS
+            </span>
+            <div className="flex flex-col gap-1.5 font-serif text-xs text-bone-mute tracking-[0.04em]">
+              <span>小抄/夹带</span>
+              <span>榜眼引路</span>
+              <span>恩师引荐</span>
+            </div>
+          </div>
+        </aside>
+
+        {/* Center — Actions + Narrative */}
+        <main className="flex flex-col gap-4 min-w-0">
+          {/* Action cards grid */}
+          <div className="grid grid-cols-5 gap-3">
+            {ACTIONS.map((action) => (
+              <ActionCard
+                key={action.id}
+                action={action}
+                iconSrc={ACTION_ICONS[action.id] ?? "/assets/action-study.png"}
+                disabled={isPending}
+                onClick={() => handleAction(action.id)}
+              />
+            ))}
+          </div>
+
+          {/* Narrative strip */}
+          <NarrativeStrip
+            text={narration}
+            timestamp={`${SEASON_LABELS[world.season]} · 第${world.year}年`}
+          />
+
+          {/* Scheme exposure flash */}
+          {narration.includes("东窗事发") && (
+            <div className="px-4 py-3 border border-vermillion bg-[rgba(196,57,44,0.12)] font-serif text-sm text-vermillion tracking-[0.04em]">
+              东窗事发！行迹败露，名声大损。
+            </div>
+          )}
+        </main>
+
+        {/* Right Panel — Status */}
+        <aside className="flex flex-col gap-5">
+          {/* Title display */}
+          <div className="border border-hairline p-4 bg-paper-1">
+            <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-2">
+              TITLE
+            </span>
+            <span className="font-calli text-[28px] text-gold-glow tracking-[0.22em]">
+              {highestTitle}
+            </span>
+            <span className="block font-mono text-[10px] text-bone-mute tracking-[0.08em] mt-1">
+              {dynasty.family_name}氏 · 第{character.generation}世
+            </span>
+          </div>
+
+          {/* Exam countdown */}
+          <div className="border border-hairline p-4 bg-paper-1">
+            <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-2">
+              NEXT EXAM
+            </span>
+            <div className="flex items-baseline gap-2">
+              <span className="font-serif text-base text-bone tracking-[0.08em]">
+                {nextExam.label}
+              </span>
+              <span className="font-mono text-xs text-gold-dim tracking-[0.06em]">
+                {nextExam.seasons > 0 ? `${nextExam.seasons}季后` : "已开放"}
+              </span>
+            </div>
+            <button
+              type="button"
+              disabled={nextExam.seasons > 0}
+              className="mt-3 w-full px-4 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.22em] transition-all duration-200 disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:cursor-not-allowed"
+              aria-label="Enter examination"
+            >
+              参加考试
+            </button>
+          </div>
+
+          {/* Era display */}
+          <div className="border border-hairline p-4 bg-paper-1">
+            <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-2">
+              ERA
+            </span>
+            <span className="font-serif text-base text-bone tracking-[0.12em]">
+              {ERA_LABELS[world.era]}
+            </span>
+            <span className="block font-mono text-[10px] text-bone-mute tracking-[0.08em] mt-1">
+              {world.era_year}年目
+            </span>
+          </div>
+
+          {/* Court hints */}
+          <div className="border border-hairline p-4 bg-paper-1 flex flex-col gap-3">
+            <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block">
+              COURT WHIMS
+            </span>
+            <CourtHint
+              label="STYLE"
+              state={world.court_whims_revealed.style_known ? "full" : "hidden"}
+              value={world.court_whims.style}
+            />
+            <CourtHint
+              label="TEMPER"
+              state={world.court_whims_revealed.temperament_known}
+              value={world.court_whims.emperor_temperament}
+              eliminated={world.court_whims_revealed.temperament_eliminated}
+            />
+          </div>
+        </aside>
+      </div>
+    </>
   );
 }

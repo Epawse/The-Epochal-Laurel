@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { TopBar } from "@/components/game/TopBar";
 import { ORIGINS, type Origin, type OriginDef } from "@/lib/game/constants";
+import { newGame } from "@/lib/actions/game";
 
 const originList = Object.values(ORIGINS);
 
@@ -93,14 +94,20 @@ export default function CreatePage() {
   const router = useRouter();
   const [familyName, setFamilyName] = useState("");
   const [selectedOrigin, setSelectedOrigin] = useState<Origin | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   const selectedDef = selectedOrigin ? ORIGINS[selectedOrigin] : null;
-  const canConfirm = selectedOrigin !== null;
+  const canConfirm = selectedOrigin !== null && !isPending;
 
   function handleConfirm() {
-    if (!canConfirm) return;
-    // Task 4 will wire this to a Server Action
-    router.push("/play");
+    if (!selectedOrigin || isPending) return;
+
+    startTransition(async () => {
+      const state = await newGame(familyName || "张", selectedOrigin);
+      // Store in sessionStorage for the play page to pick up
+      sessionStorage.setItem("game_state", JSON.stringify(state));
+      router.push("/play");
+    });
   }
 
   return (
@@ -220,7 +227,7 @@ export default function CreatePage() {
               className="px-8 py-3 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-lg tracking-[0.32em] transition-all duration-200 shadow-[0_4px_16px_rgba(196,57,44,0.2),inset_0_0_0_1px_rgba(232,200,121,0.2)] hover:brightness-108 hover:-translate-y-px disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:shadow-none disabled:cursor-not-allowed disabled:translate-y-0 disabled:brightness-100"
               aria-label="Confirm origin selection and begin"
             >
-              入世求名
+              {isPending ? "命运开启中..." : "入世求名"}
             </button>
           </div>
         </div>

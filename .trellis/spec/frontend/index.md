@@ -38,6 +38,10 @@ The demo target is laptop/desktop browser, but QR-code distribution means some p
 
 | Guide | Description |
 |-------|-------------|
+| [Design Tokens](./design-tokens.md) | Color palette, typography stacks, spacing, Tailwind theme config |
+| [Component Catalog](./component-catalog.md) | 17 components with variants, states, and file mapping |
+| [Motion Patterns](./motion-patterns.md) | 7 animation patterns — Framer Motion + CSS keyframes |
+| [Screen Map](./screen-map.md) | 10 routes, layouts, asset deps, RSC vs client rendering |
 | [Directory Structure](./directory-structure.md) | routes, components/{game,ui}, hooks, stores |
 | [Component Guidelines](./component-guidelines.md) | RSC vs client, props, the visual-moment components |
 | [Hook Guidelines](./hook-guidelines.md) | use* patterns, Server-Action wrappers |

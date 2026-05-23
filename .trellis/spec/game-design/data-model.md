@@ -76,6 +76,10 @@ The game engine maintains a single JSON object as the source of truth. AI genera
 - `max_age` is rolled at character creation (formula in balance.md > Lifespan). Reaching it triggers natural death and ends the generation (core-loop.md > Inheritance triggers).
 - `family.spouse` is `null` until the one-time `Marry` action; `family.children` accumulates sons born during the fertility window. Only `is_son: true` children that are `alive` become heir candidates at inheritance. Birth / survival / heir-count rules live in balance.md > Fertility & Lineage.
 - `exam_history` entries for `level: "palace"` additionally carry the engine-computed `rank` (1–4), `title` (状元/榜眼/探花/进士), and a `rivals` score snapshot.
+- Title prestige order is a shared engine constant, not per-screen display
+  logic. Use `TITLE_RANK` / `highestTitleOf()` from `lib/game/constants.ts`
+  whenever computing "highest title"; palace rank order is
+  状元 > 榜眼 > 探花 > 进士.
 
 ---
 
@@ -206,6 +210,12 @@ When era changes:
 ```
 
 NPCs persist within a generation. Cross-generation NPCs (e.g., a long-lived mentor) are rare and marked explicitly.
+
+`Npc.role` and `character.relationships[].type` are related but not
+interchangeable. `role` may be `"friend"` for flavor NPCs; relationship `type`
+must stay one of `"mentor" | "rival" | "spouse" | "patron"`. Creating a friend
+NPC must not fabricate a mentor relationship, because `mentor_plea` gates on a
+real mentor relationship with affinity.
 
 ### NPC Memory Cap
 

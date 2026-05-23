@@ -185,15 +185,14 @@ export async function advanceTurn(
       }
     }
 
-    // 30% chance to create a new NPC (if < 5 NPCs exist)
+    // 30% chance to create a new friend NPC (if < 5 NPCs exist).
+    // Friends are flavor NPCs — they get NO relationship entry. Relationships are
+    // reserved for affinity-bearing roles (mentor/rival/spouse/patron), and the
+    // RelationshipSchema enum has no "friend". Attaching a "mentor" relationship
+    // here previously let an ordinary friend satisfy 恩师引荐.
     if (result.state.npcs.filter((n) => n.alive).length < 5 && npcRng.next() < 0.30) {
       const newNpc = createRandomNpc(result.state, npcRng, "friend");
       result.state.npcs.push(newNpc);
-      result.state.character.relationships.push({
-        npc_id: newNpc.id,
-        type: "mentor",
-        affinity: 30,
-      });
       if (!npcDialogue) {
         npcDialogue = `结识了${newNpc.name}（${npcRoleLabel(newNpc.role)}）。`;
       }
@@ -431,7 +430,7 @@ function npcRoleLabel(role: string): string {
 
 // ── getExamQuestion ──────────────────────────────────────────────────────────
 
-import { EXAM_REWARDS } from "@/lib/game/constants";
+import { EXAM_REWARDS, TITLE_RANK } from "@/lib/game/constants";
 import {
   scoreFixedChoice,
   scoreFreeText,
@@ -671,7 +670,7 @@ export interface ToolResult {
   reEvalPassed?: boolean;
 }
 
-export async function useToolAction(
+export async function applyToolAction(
   currentState: GameState,
   toolId: string,
   context?: {
@@ -1192,19 +1191,9 @@ export async function submitPalaceExam(
     wealth: 0,
   });
 
-  // Update dynasty highest title
-  if (playerTitle === "状元") {
-    newState.dynasty.highest_title_ever = "状元";
-  } else if (
-    newState.dynasty.highest_title_ever !== "状元" &&
-    (playerTitle === "探花" || playerTitle === "榜眼" || playerTitle === "进士")
-  ) {
-    const titleRank: Record<string, number> = { 进士: 1, 探花: 2, 榜眼: 3, 状元: 4 };
-    const current = titleRank[newState.dynasty.highest_title_ever] ?? 0;
-    const newTitle = titleRank[playerTitle] ?? 0;
-    if (newTitle > current) {
-      newState.dynasty.highest_title_ever = playerTitle;
-    }
+  // Update dynasty highest title (shared TITLE_RANK — see constants.ts)
+  if ((TITLE_RANK[playerTitle] ?? 0) > (TITLE_RANK[newState.dynasty.highest_title_ever] ?? 0)) {
+    newState.dynasty.highest_title_ever = playerTitle;
   }
 
   // ── Step 6: Evaluate victory condition ──

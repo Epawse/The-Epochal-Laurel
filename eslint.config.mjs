@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Reference design prototypes — not shipped app code, intentionally
+    // standalone JSX with unresolved globals.
+    "local/**",
   ]),
 ]);
 

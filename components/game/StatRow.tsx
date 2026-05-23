@@ -37,19 +37,25 @@ const deltaChip = {
 
 export function StatRow({ slot, label, value, max, delta }: StatRowProps) {
   const reduce = useReducedMotion();
-  const [visibleDelta, setVisibleDelta] = useState<number | null>(delta ?? null);
+  const [visibleDelta, setVisibleDelta] = useState<number | null>(
+    delta !== undefined && delta !== 0 ? delta : null,
+  );
+  const [prevDelta, setPrevDelta] = useState(delta);
   const isDanger = slot === "drive" && value <= 25;
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
 
+  // Sync the shown delta when the prop changes — during render, not in an effect.
+  if (delta !== prevDelta) {
+    setPrevDelta(delta);
+    setVisibleDelta(delta !== undefined && delta !== 0 ? delta : null);
+  }
+
+  // Auto-dismiss after 1.4s; setState lives in the async timer, not the effect body.
   useEffect(() => {
-    if (delta !== undefined && delta !== 0) {
-      setVisibleDelta(delta);
-      const timer = setTimeout(() => setVisibleDelta(null), 1400);
-      return () => clearTimeout(timer);
-    } else {
-      setVisibleDelta(null);
-    }
-  }, [delta]);
+    if (visibleDelta === null) return;
+    const timer = setTimeout(() => setVisibleDelta(null), 1400);
+    return () => clearTimeout(timer);
+  }, [visibleDelta]);
 
   return (
     <div

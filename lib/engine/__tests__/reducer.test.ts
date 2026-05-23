@@ -343,6 +343,22 @@ describe("reducer", () => {
       const result = resolvePalaceExam(state, 95, rivals);
       expect(result.state.dynasty.highest_title_ever).toBe("状元");
     });
+
+    it("keeps 榜眼 above 探花 when updating dynasty highest_title_ever", () => {
+      const state = makeTestState();
+      state.character.titles = ["贡士"];
+      state.dynasty.highest_title_ever = "榜眼";
+      const rivals = [
+        { name: "A", score: 95 },
+        { name: "B", score: 90 },
+        { name: "C", score: 60 },
+      ];
+
+      const result = resolvePalaceExam(state, 85, rivals);
+
+      expect(result.playerTitle).toBe("探花");
+      expect(result.state.dynasty.highest_title_ever).toBe("榜眼");
+    });
   });
 
   describe("initExamSchedule", () => {

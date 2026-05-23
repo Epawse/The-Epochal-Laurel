@@ -12,9 +12,9 @@ import {
   ACTIONS,
   EXAM_REWARDS,
   BLESSINGS,
-  ERA_MODIFIERS,
+  TITLE_RANK,
 } from "@/lib/game/constants";
-import { createRng, type Rng } from "./rng";
+import { type Rng } from "./rng";
 import {
   applyActionEffects,
   driveLossPerSeason,
@@ -25,7 +25,7 @@ import {
   applyStatChanges,
   clampStats,
 } from "./balance";
-import { examThreshold, palaceRanking } from "./exam";
+import { palaceRanking } from "./exam";
 import { rollMaxAge } from "./lineage";
 import {
   calculateLegacyTokens,
@@ -82,7 +82,7 @@ export function advanceSeason(
     throw new Error(`Unknown action: ${actionId}`);
   }
 
-  let newState = structuredClone(state) as GameState;
+  const newState = structuredClone(state) as GameState;
   let schemeExposed = false;
   let eventTrigger: string | null = null;
 
@@ -312,11 +312,8 @@ export function resolvePalaceExam(
     rivals: rivals.map((r) => ({ name: r.name, score: r.score })),
   });
 
-  // Update dynasty highest title
-  const titleOrder = ["秀才", "举人", "贡士", "进士", "榜眼", "探花", "状元"];
-  const currentHighest = titleOrder.indexOf(newState.dynasty.highest_title_ever);
-  const newTitle = titleOrder.indexOf(playerTitle);
-  if (newTitle > currentHighest) {
+  // Update dynasty highest title (shared TITLE_RANK — see constants.ts)
+  if ((TITLE_RANK[playerTitle] ?? 0) > (TITLE_RANK[newState.dynasty.highest_title_ever] ?? 0)) {
     newState.dynasty.highest_title_ever = playerTitle;
   }
 

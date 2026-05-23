@@ -9,6 +9,7 @@ import type { I1Heirs } from "@/lib/ai/schema";
 import type { LegacyTokens } from "@/lib/engine/inheritance";
 import { chooseHeir } from "@/lib/actions/game";
 import { EraTransition } from "@/components/game/EraTransition";
+import { useSessionJSON } from "@/hooks/useSessionJSON";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ const BLESSING_EFFECT_LABELS: Record<string, string> = {
 
 export default function InheritPage() {
   const router = useRouter();
-  const [data, setData] = useState<InheritanceData | null>(null);
+  const data = useSessionJSON<InheritanceData>("inheritance_data");
   const [selectedHeir, setSelectedHeir] = useState<number | null>(null);
   const [purchasedBlessings, setPurchasedBlessings] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
@@ -61,18 +62,17 @@ export default function InheritPage() {
   } | null>(null);
   const [newState, setNewState] = useState<GameState | null>(null);
 
-  // Load inheritance data from sessionStorage
+  // No inheritance context → back to the daily loop.
   useEffect(() => {
-    const stored = sessionStorage.getItem("inheritance_data");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as InheritanceData;
-        setData(parsed);
-      } catch {
-        // Invalid data, redirect back
-        router.push("/play");
-      }
-    } else {
+    if (typeof window === "undefined") return;
+    const stored = window.sessionStorage.getItem("inheritance_data");
+    if (stored === null) {
+      router.push("/play");
+      return;
+    }
+    try {
+      JSON.parse(stored);
+    } catch {
       router.push("/play");
     }
   }, [router]);

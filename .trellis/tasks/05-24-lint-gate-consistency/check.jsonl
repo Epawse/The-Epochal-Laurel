@@ -1,0 +1,3 @@
+{"file": ".trellis/workspace/haoran/2026-05-24-roadmap-completeness-analysis.md", "reason": "Verify each listed lint/consistency issue is resolved"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Lint/quality acceptance bar"}
+{"file": ".trellis/spec/game-design/data-model.md", "reason": "Verify NPC friend fix matches the data model"}

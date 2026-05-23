@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { SceneBackground } from "@/components/ui/SceneBackground";
 import { SealStamp } from "@/components/ui/SealStamp";
 import { recordScore, getPlayerSessionId } from "@/lib/actions/leaderboard";
 import { calculateScore } from "@/lib/game/scoring";
-import type { PalaceExamResult, VictoryTier } from "@/lib/actions/game";
+import type { PalaceExamResult } from "@/lib/actions/game";
 import type { RankingEntry } from "@/lib/engine/exam";
+import { useSessionJSON } from "@/hooks/useSessionJSON";
 
 const TITLE_COLORS: Record<string, string> = {
   "状元": "text-gold-glow",
@@ -30,17 +31,18 @@ const TIER_LABELS: Record<string, string> = {
 
 export default function PalacePage() {
   const router = useRouter();
-  const [result, setResult] = useState<PalaceExamResult | null>(null);
+  const result = useSessionJSON<PalaceExamResult>("palace_result");
 
+  // No palace result → back to the daily loop.
   useEffect(() => {
-    const stored = sessionStorage.getItem("palace_result");
-    if (!stored) {
+    if (typeof window === "undefined") return;
+    const stored = window.sessionStorage.getItem("palace_result");
+    if (stored === null) {
       router.push("/play");
       return;
     }
     try {
-      const parsed = JSON.parse(stored) as PalaceExamResult;
-      setResult(parsed);
+      JSON.parse(stored);
     } catch {
       router.push("/play");
     }
@@ -54,7 +56,7 @@ export default function PalacePage() {
     );
   }
 
-  const { ranking, playerRank, narration, victoryTier } = result;
+  const { ranking, narration, victoryTier } = result;
 
   return (
     <>

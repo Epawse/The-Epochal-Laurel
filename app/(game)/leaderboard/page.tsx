@@ -2,10 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { SealStamp } from "@/components/ui/SealStamp";
 import { getLeaderboard } from "@/lib/actions/leaderboard";
+import { useSessionJSON } from "@/hooks/useSessionJSON";
 import type { LeaderboardEntry } from "@/lib/db/queries";
 
 interface DynastySummary {
@@ -26,36 +25,19 @@ const TIER_NOTES: Record<string, string> = {
 };
 
 export default function LeaderboardPage() {
-  const router = useRouter();
+  const dynastySummary = useSessionJSON<DynastySummary>("dynasty_summary");
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [dynastySummary, setDynastySummary] = useState<DynastySummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playerSessionId, setPlayerSessionId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Load dynasty summary from sessionStorage (set by game over flow)
-    const stored = sessionStorage.getItem("dynasty_summary");
-    if (stored) {
+    async function load() {
+      // player_session_id is a raw UUID string (not JSON) — read directly.
+      const sid = sessionStorage.getItem("player_session_id");
+      if (sid) setPlayerSessionId(sid);
       try {
-        const parsed = JSON.parse(stored) as DynastySummary;
-        setDynastySummary(parsed);
-      } catch {
-        // Ignore invalid data
-      }
-    }
-
-    // Load player session ID for highlighting
-    const sessionId = sessionStorage.getItem("player_session_id");
-    if (sessionId) {
-      setPlayerSessionId(sessionId);
-    }
-
-    // Fetch leaderboard data
-    async function fetchLeaderboard() {
-      try {
-        const data = await getLeaderboard();
-        setEntries(data);
+        setEntries(await getLeaderboard());
       } catch (e) {
         console.warn("Failed to fetch leaderboard:", e);
         setError("暂无法连接排行榜");
@@ -63,8 +45,7 @@ export default function LeaderboardPage() {
         setIsLoading(false);
       }
     }
-
-    fetchLeaderboard();
+    load();
   }, []);
 
   return (

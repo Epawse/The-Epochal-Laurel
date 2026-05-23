@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { ScrollFramePanel } from "@/components/ui/ScrollFramePanel";
 import { ExamChoice } from "@/components/game/ExamChoice";
 import { ResultOverlay } from "@/components/game/ResultOverlay";
-import { getExamQuestion, submitExamAnswer, submitPalaceExam, useToolAction } from "@/lib/actions/game";
+import { getExamQuestion, submitExamAnswer, submitPalaceExam, applyToolAction } from "@/lib/actions/game";
 import type { GameState } from "@/lib/game/schema";
 import type { ExamLevel } from "@/lib/game/constants";
 import type { E1ExamQuestion } from "@/lib/ai/schema";
 import type { ExamResult, ToolResult } from "@/lib/actions/game";
+import { useSessionJSON } from "@/hooks/useSessionJSON";
 
 const EXAM_LEVEL_LABELS: Record<string, string> = {
   county: "童试",
@@ -20,8 +21,10 @@ const EXAM_LEVEL_LABELS: Record<string, string> = {
 
 export default function ExamPage() {
   const router = useRouter();
+  const persisted = useSessionJSON<GameState>("game_state");
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [examLevel, setExamLevel] = useState<ExamLevel>("county");
+  const [synced, setSynced] = useState(false);
   const [question, setQuestion] = useState<E1ExamQuestion | null>(null);
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null);
   const [freeText, setFreeText] = useState("");
@@ -32,34 +35,46 @@ export default function ExamPage() {
   const [insiderTipChoice, setInsiderTipChoice] = useState<string | null>(null);
   const [toolMessage, setToolMessage] = useState<string | null>(null);
 
-  // Load game state and determine exam level
+  // Hydrate from the persisted save once + derive the exam level (render-time sync).
+  if (!synced && persisted !== null) {
+    setSynced(true);
+    setGameState(persisted);
+    let level: ExamLevel = "county";
+    if (persisted.character.titles.includes("贡士")) level = "palace";
+    else if (persisted.character.titles.includes("举人")) level = "metropolitan";
+    else if (persisted.character.titles.includes("秀才")) level = "provincial";
+    setExamLevel(level);
+  }
+
+  // No save → back to the daily loop.
   useEffect(() => {
-    const stored = sessionStorage.getItem("game_state");
-    if (!stored) {
+    if (typeof window === "undefined") return;
+    const stored = window.sessionStorage.getItem("game_state");
+    if (stored === null) {
       router.push("/play");
       return;
     }
-
     try {
-      const parsed = JSON.parse(stored) as GameState;
-      setGameState(parsed);
-
-      // Determine which exam level to take based on titles
-      let level: ExamLevel = "county";
-      if (parsed.character.titles.includes("贡士")) level = "palace";
-      else if (parsed.character.titles.includes("举人")) level = "metropolitan";
-      else if (parsed.character.titles.includes("秀才")) level = "provincial";
-      setExamLevel(level);
-
-      // Fetch exam question
-      getExamQuestion(parsed, level).then((q) => {
-        setQuestion(q);
-        setIsLoading(false);
-      });
+      JSON.parse(stored);
     } catch {
       router.push("/play");
     }
   }, [router]);
+
+  // Fetch the exam question once, after state is hydrated.
+  useEffect(() => {
+    if (!gameState || question !== null) return;
+    let cancelled = false;
+    getExamQuestion(gameState, examLevel).then((q) => {
+      if (!cancelled) {
+        setQuestion(q);
+        setIsLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [gameState, examLevel, question]);
 
   function handleSubmit() {
     if (!gameState || !question) return;
@@ -105,7 +120,7 @@ export default function ExamPage() {
   async function handleUseTool(toolId: string) {
     if (!gameState || !question) return;
 
-    const result: ToolResult = await useToolAction(gameState, toolId, {
+    const result: ToolResult = await applyToolAction(gameState, toolId, {
       examLevel,
       question,
     });

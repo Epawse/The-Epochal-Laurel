@@ -4,7 +4,7 @@
  */
 
 import type { Stats, StatChanges } from "@/lib/game/schema";
-import type { ActionDef, Era, EventType } from "@/lib/game/constants";
+import type { ActionDef, EventType } from "@/lib/game/constants";
 import { STAT_BOUNDARIES } from "@/lib/game/constants";
 import type { Rng } from "./rng";
 
@@ -38,9 +38,9 @@ export function applyActionEffects(
   const effects = action.effects;
 
   let erudition = resolveRange(effects.erudition, rng);
-  let fortune = resolveRange(effects.fortune, rng);
-  let drive = resolveRange(effects.drive, rng);
-  let wealth = resolveRange(effects.wealth, rng);
+  const fortune = resolveRange(effects.fortune, rng);
+  const drive = resolveRange(effects.drive, rng);
+  const wealth = resolveRange(effects.wealth, rng);
 
   // Apply diminishing returns to positive erudition gains (study action above 80)
   if (erudition > 0) {

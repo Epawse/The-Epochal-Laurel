@@ -90,6 +90,31 @@ export const TITLE_VALUES: Record<string, number> = {
   状元: 100,
 } as const;
 
+// ── Title Rank (single source of truth for prestige ordering) ───────────────
+// Status order (low → high): 白身 < 秀才 < 举人 < 贡士 < 进士 < 探花 < 榜眼 < 状元.
+// Palace top-3 prestige follows 状元(1st) > 榜眼(2nd) > 探花(3rd); 进士 is 4th.
+// Mirror of exam.ts PALACE_TITLES ordering — consume this everywhere a "highest
+// title" is computed so the 榜眼/探花 order never drifts again.
+export const TITLE_RANK: Record<string, number> = {
+  白身: 0,
+  秀才: 1,
+  举人: 2,
+  贡士: 3,
+  进士: 4,
+  探花: 5,
+  榜眼: 6,
+  状元: 7,
+} as const;
+
+/** Return the highest-prestige title in a list, or 白身 if none. */
+export function highestTitleOf(titles: string[]): string {
+  let best = "白身";
+  for (const t of titles) {
+    if ((TITLE_RANK[t] ?? -1) > (TITLE_RANK[best] ?? 0)) best = t;
+  }
+  return best;
+}
+
 // ── Exam Thresholds ─────────────────────────────────────────────────────────
 
 export const EXAM_THRESHOLDS: Record<ExamLevel, number | null> = {

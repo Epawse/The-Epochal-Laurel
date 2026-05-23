@@ -1,28 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SceneBackground } from "@/components/ui/SceneBackground";
 import { LandingTitle } from "@/components/game/LandingTitle";
+import { useSessionJSON } from "@/hooks/useSessionJSON";
 
 export default function LandingPage() {
   const router = useRouter();
-  const [hasSave, setHasSave] = useState(false);
-
-  // Check for existing save in sessionStorage on mount
-  useEffect(() => {
-    const stored = sessionStorage.getItem("game_state");
-    if (stored) {
-      try {
-        JSON.parse(stored);
-        setHasSave(true);
-      } catch {
-        // Invalid stored state
-        setHasSave(false);
-      }
-    }
-  }, []);
+  const hasSave = useSessionJSON<unknown>("game_state") !== null;
 
   function handleContinue() {
     if (hasSave) {

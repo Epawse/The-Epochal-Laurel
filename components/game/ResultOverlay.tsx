@@ -43,29 +43,28 @@ export function ResultOverlay({
   onDismiss,
 }: ResultOverlayProps) {
   const reduce = useReducedMotion();
-  const [showConfetti, setShowConfetti] = useState(false);
-  const [shaking, setShaking] = useState(false);
+  // Start "on" for a pass; the timers below switch them off. This is initial
+  // state (not a setState-in-effect). Reduced-motion users never see them
+  // because the render gates on !reduce.
+  const [showConfetti, setShowConfetti] = useState(passed);
+  const [shaking, setShaking] = useState(passed);
 
-  // Trigger celebratory effects on pass
   useEffect(() => {
-    if (passed && !reduce) {
-      setShaking(true);
-      setShowConfetti(true);
-      const shakeTimer = setTimeout(() => setShaking(false), 300);
-      const confettiTimer = setTimeout(() => setShowConfetti(false), 3500);
-      return () => {
-        clearTimeout(shakeTimer);
-        clearTimeout(confettiTimer);
-      };
-    }
+    if (!passed || reduce) return;
+    const shakeTimer = setTimeout(() => setShaking(false), 300);
+    const confettiTimer = setTimeout(() => setShowConfetti(false), 3500);
+    return () => {
+      clearTimeout(shakeTimer);
+      clearTimeout(confettiTimer);
+    };
   }, [passed, reduce]);
 
   const duration = reduce ? 0.01 : undefined;
 
   return (
-    <div className={`fixed inset-0 z-[100] flex items-center justify-center ${shaking ? "screen-shake" : ""}`}>
+    <div className={`fixed inset-0 z-[100] flex items-center justify-center ${shaking && !reduce ? "screen-shake" : ""}`}>
       {/* Confetti for pass */}
-      {passed && showConfetti && <Confetti />}
+      {passed && showConfetti && !reduce && <Confetti />}
 
       {/* Scrim */}
       <motion.div

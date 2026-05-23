@@ -9,11 +9,12 @@ import { NarrativeStrip } from "@/components/game/NarrativeStrip";
 import { CourtHint } from "@/components/game/CourtHint";
 import { EventModal } from "@/components/game/EventModal";
 import { SchemeExposureOverlay } from "@/components/game/SchemeExposureOverlay";
-import { ACTIONS } from "@/lib/game/constants";
+import { ACTIONS, highestTitleOf } from "@/lib/game/constants";
 import type { GameState, StatChanges } from "@/lib/game/schema";
-import { advanceTurn, submitEventChoice, submitEventFreeInput, useToolAction, generateHeirsAction } from "@/lib/actions/game";
+import { advanceTurn, submitEventChoice, submitEventFreeInput, generateHeirsAction } from "@/lib/actions/game";
 import { recordScore, getPlayerSessionId } from "@/lib/actions/leaderboard";
 import { calculateScore } from "@/lib/game/scoring";
+import { useSessionJSON } from "@/hooks/useSessionJSON";
 
 const ACTION_ICONS: Record<string, string> = {
   study: "/assets/action-study.png",
@@ -43,14 +44,6 @@ function getPortraitSrc(age: number): string {
   return "/assets/scholar-young.png";
 }
 
-function getHighestTitle(titles: string[]): string {
-  const titleOrder = ["状元", "探花", "榜眼", "进士", "贡士", "举人", "秀才"];
-  for (const t of titleOrder) {
-    if (titles.includes(t)) return t;
-  }
-  return "白身";
-}
-
 function getNextExamCountdown(examSchedule: {
   next_county: number;
   next_provincial: number;
@@ -70,29 +63,23 @@ function getNextExamCountdown(examSchedule: {
 
 export default function PlayPage() {
   const router = useRouter();
+  const persisted = useSessionJSON<GameState>("game_state");
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [synced, setSynced] = useState(false);
   const [deltas, setDeltas] = useState<Partial<StatChanges>>({});
   const [narration, setNarration] = useState(
     "新的一天开始了。准备好踏上科举之路吧。"
   );
   const [isPending, startTransition] = useTransition();
-  const [toolMessage, setToolMessage] = useState<string | null>(null);
   const [schemeExposed, setSchemeExposed] = useState(false);
 
-  // Load game state from sessionStorage on mount
-  useEffect(() => {
-    const stored = sessionStorage.getItem("game_state");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as GameState;
-        setGameState(parsed);
-      } catch {
-        // Invalid stored state, ignore
-      }
-    }
-  }, []);
+  // Hydrate local state once from the persisted save (render-time sync, not an effect).
+  if (!synced && persisted !== null) {
+    setSynced(true);
+    setGameState(persisted);
+  }
 
-  // Persist game state to sessionStorage on change
+  // Persist game state to sessionStorage on change.
   useEffect(() => {
     if (gameState) {
       sessionStorage.setItem("game_state", JSON.stringify(gameState));
@@ -117,7 +104,7 @@ export default function PlayPage() {
   }
 
   const { character, world, dynasty } = gameState;
-  const highestTitle = getHighestTitle(character.titles);
+  const highestTitle = highestTitleOf(character.titles);
   const portraitSrc = getPortraitSrc(character.age);
   const isDanger = character.stats.drive <= 25;
   const nextExam = getNextExamCountdown(world.exam_schedule);
@@ -157,7 +144,7 @@ export default function PlayPage() {
           if (heirsResult.gameOver) {
             // Family line dies out — game over (F tier)
             const { dynasty: dyn, character: char } = result.state;
-            const highTitle = getHighestTitle(char.titles);
+            const highTitle = highestTitleOf(char.titles);
             const tier = "F";
             const score = calculateScore(highTitle, tier, dyn.total_generations);
 

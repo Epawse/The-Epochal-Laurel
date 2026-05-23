@@ -170,3 +170,36 @@ Implemented lib/engine/ (rng, balance, exam, lineage, inheritance, reducer) with
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Task 4: Server Actions + Database + Daily Loop
+
+**Date**: 2026-05-23
+**Task**: Task 4: Server Actions + Database + Daily Loop
+**Branch**: `main`
+
+### Summary
+
+Wired engine to UI through Server Actions and Supabase persistence. Daily loop fully playable: create character, select actions, see stat changes, seasons advance. Template narration, age-based portraits, drive danger mode, court hints.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `175ed77` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

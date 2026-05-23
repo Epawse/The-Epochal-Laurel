@@ -22,13 +22,15 @@ The game engine maintains a single JSON object as the source of truth. AI genera
     "generation": 1,
     "age": 16,
     "max_age": 65,
-    "gender": "male",
-    "origin": "humble_scholar | farming_family | merchant_son",
+    "gender": "male",  // see core-loop.md "Design Decisions > Gender" for rationale
+    "origin": "humble_scholar | farming_family | merchant_son | official_decline",
+    "origin_effects_applied": true,
 
     "stats": {
       "erudition": 20,
       "fortune": 10,
-      "drive": 100
+      "drive": 100,
+      "wealth": 5
     },
 
     "titles": [],
@@ -59,6 +61,7 @@ The game engine maintains a single JSON object as the source of truth. AI genera
 | Erudition | 0 | 100 | Cannot sit for any exam |
 | Fortune | -50 | 100 | Negative = actively cursed (bad events guaranteed) |
 | Drive | 0 | 100 | Triggers inheritance (generation ends) |
+| Wealth | 0 | 200 | Cannot afford exam travel or bribes |
 
 ---
 
@@ -79,11 +82,24 @@ The game engine maintains a single JSON object as the source of truth. AI genera
       "emperor_temperament": "ambitious | lazy | paranoid | benevolent"
     },
 
+    "court_whims_revealed": {
+      "style_known": false,
+      "temperament_known": "hidden | partial | full",
+      "temperament_eliminated": []
+    },
+
     "events_this_era": [],
     "exam_schedule": {
       "next_county": 1043,
       "next_provincial": 1044,
       "next_metropolitan": 1045
+    },
+
+    "auxiliary_tools": {
+      "cheat_sheet_used_this_cycle": false,
+      "insider_tip_used_this_cycle": false,
+      "mentor_plea_used_this_cycle": false,
+      "current_exam_cycle_start_year": 1042
     }
   }
 }
@@ -169,6 +185,19 @@ Eras shift every 2-3 generations (or triggered by specific events). When era cha
 ```
 
 NPCs persist within a generation. Cross-generation NPCs (e.g., a long-lived mentor) are rare and marked explicitly.
+
+### NPC Memory Cap
+
+Each NPC stores a maximum of **10 memory entries**. When a new memory would exceed the cap, the oldest entry with the weakest sentiment is dropped. This prevents unbounded state growth in long runs.
+
+### NPC Handling on Era Change
+
+When an era transition occurs:
+- NPCs with `role: examiner` are **replaced** (new court, new examiners)
+- NPCs with `role: mentor | patron` have a **50% chance of dying** (age/war/political purge)
+- NPCs with `role: spouse | friend` **persist** (family endures)
+- NPCs with `role: rival` **persist with memory reset** (old grudges fade in new times)
+- All surviving NPCs gain a memory entry: `{"event": "era_change", "sentiment": "uncertain"}`
 
 ---
 

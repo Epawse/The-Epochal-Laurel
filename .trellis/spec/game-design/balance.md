@@ -4,6 +4,28 @@
 
 ---
 
+## Origin Definitions
+
+Each origin provides starting stat modifiers and a unique trait. First generation uses dynasty blessing points to "buy" an origin; subsequent generations inherit based on legacy.
+
+| Origin | Erudition | Fortune | Drive | Wealth | Innate Trait | Flavor |
+|--------|-----------|---------|-------|--------|-------------|--------|
+| 寒门孤儿 (Humble Scholar) | +5 | -20 | +10 | 0 | 囊萤映雪: Study action costs 0 Drive | Hardship breeds resilience |
+| 耕读之家 (Farming Family) | +15 | +10 | 0 | +5 | 宗族荫庇: Provincial exam threshold -5 | Stable foundation |
+| 盐商庶子 (Merchant Son) | 0 | +5 | 0 | +30 | 铜臭难洗: Socialize with scholars has 20% chance of rejection | Rich but scorned |
+| 没落官宦 (Fallen Official) | +10 | -10 | -10 | +10 | 旧日荣光: Start with 1 random NPC connection (patron or mentor) | Past glory, present shame |
+
+### Origin Availability
+
+- **Generation 1**: Player chooses freely from all origins
+- **Generation 2+**: Origin is determined by previous generation's ending state:
+  - Ended with 举人+ title → 耕读之家 or 没落官宦
+  - Ended with high wealth (≥ 50) → 盐商庶子 or 耕读之家
+  - Ended with low wealth (< 10) and no title → 寒门孤儿
+  - Player always gets 2-3 options (never forced into exactly one)
+
+---
+
 ## Stat Change Rules
 
 ### Action Effects (Per Season)
@@ -45,10 +67,12 @@ This creates natural generational pressure without arbitrary death timers.
 ### Pass Threshold Formula
 
 ```
-threshold = base_threshold + (attempt_number * 5) - fortune_bonus
+threshold = base_threshold + era_modifier - fortune_bonus
 
 fortune_bonus = fortune / 10
 ```
+
+Note: threshold does NOT increase with repeated attempts. Failing an exam is already punishing (Drive loss, time spent). The game encourages trying different strategies (free-text, scheming for court_whims info) rather than grinding the same approach.
 
 | Exam Level | Base Threshold | Max Score |
 |-----------|---------------|-----------|
@@ -61,30 +85,45 @@ fortune_bonus = fortune / 10
 
 For **fixed choices** (A/B/C):
 ```
-score = choice_base_value + erudition_bonus + court_whims_alignment
+score = choice_base_value + erudition_bonus + court_whims_bonus
 
 erudition_bonus = erudition * 0.3
-court_whims_alignment = 0 | 10 | 20  (none / partial / full match)
+court_whims_bonus = 0 | 10 | 20  (none / partial / full match)
 ```
 
 For **free-text input**:
 ```
-score = judge_lm_score * 0.6 + erudition * 0.3 + court_whims_alignment * 0.1
+score = judge_lm_score * 0.6 + erudition_bonus + court_whims_bonus
 
+erudition_bonus = erudition * 0.3
+court_whims_bonus = 0 | 10 | 20  (none / partial / full match — same scale as fixed choices)
 judge_lm_score: 0-100 (returned by Judge LM)
 ```
 
-### Court Whims Alignment
+Both paths use the same absolute court_whims_bonus (0/10/20) to ensure consistent reward for intelligence gathering regardless of answer method.
 
-The player can discover court whims through:
-- Buying examiner's works (reveals style preference)
-- Socializing with officials (reveals emperor temperament)
-- Random events (partial reveals)
+### Court Whims Alignment
 
 Alignment scoring:
 - Style match: +10
 - Temperament match: +10
 - Both match: +20 (not +25, capped)
+
+### Court Whims Reveal Mechanism
+
+Court whims have two hidden dimensions: `style` and `emperor_temperament`. Each is independently revealed.
+
+| Discovery Method | What It Reveals | Cost/Requirement |
+|-----------------|----------------|-----------------|
+| Buy examiner's works (Scheme action) | `style` fully revealed | Wealth -5 |
+| Socialize with officials (Fortune ≥ 30) | `emperor_temperament` partially revealed (2 of 4 options eliminated) | Fortune ≥ 30 required |
+| Patron NPC gossip (affinity ≥ 40) | `emperor_temperament` fully revealed | Patron relationship |
+| Political random event | Either dimension partially revealed | Luck-based |
+| 榜眼引路 tool | Reveals which fixed choice (A/B/C) aligns best | Wealth -15 |
+
+**Reveal persistence**: Once revealed, court whims stay visible for the remainder of the current era. On era change, all reveals reset (new court, new preferences).
+
+**UI representation**: Unrevealed dimensions show as "???" in the exam preparation screen. Partially revealed shows as "非X非Y" (not X, not Y). Fully revealed shows the actual value.
 
 ---
 
@@ -170,6 +209,46 @@ event_chance_per_season = 0.20 + (fortune / 500)  // fortune affects frequency
 | 0-30 | 15% | 25% | 45% | 15% |
 | 31-60 | 25% | 15% | 40% | 20% |
 | > 60 | 35% | 10% | 35% | 20% |
+
+---
+
+## Auxiliary Tools Balance
+
+### 小抄/夹带 (Cheat Sheet)
+
+```
+activation_cost: Fortune -10
+effect: exam_score = score_with_erudition_doubled
+exposure_chance: 0.15
+exposure_penalty:
+  - exam_ban: 1 cycle (3 years)
+  - drive: -20
+  - fortune: -15
+  - reputation_event: "作弊丑闻" triggers in next season
+```
+
+### 榜眼引路 (Insider Tip)
+
+```
+activation_cost: Wealth -15
+effect: reveals best-aligned choice (A/B/C) for current court_whims
+risk: none (pure information purchase)
+availability: only when court_whims is partially or fully hidden
+```
+
+### 恩师引荐 (Mentor's Plea)
+
+```
+activation_requirement: mentor NPC with affinity >= 60
+activation_cost: mentor.affinity -20
+effect: after exam failure, threshold reduced by 15 for a "re-review"
+re_review_pass_chance: recalculate with new threshold
+limit: once per exam cycle per mentor
+availability: only after exam failure, before next season advances
+not_available_in: palace_exam
+```
+
+---
 
 ### Scheme Exposure Risk
 

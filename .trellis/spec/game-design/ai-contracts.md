@@ -16,6 +16,7 @@
 |----|---------|-----------|-----------|----------------|
 | E1 | Exam question generation | Per exam | Mid (Sonnet) | 3s |
 | E2 | Free-text answer evaluation (Judge) | Per free-text submission | High (Sonnet/Opus) | 5s |
+| E3 | Palace exam rival answers + ranking | Per palace exam only | High (Sonnet/Opus) | 5s |
 | V1 | Random event generation | Per season (20% chance) | Low (Haiku) | 1.5s |
 | V2 | Event free-input evaluation | Per free-input choice | Mid (Sonnet) | 3s |
 | N1 | NPC dialogue generation | Per NPC interaction | Low (Haiku) | 1.5s |
@@ -143,6 +144,73 @@ Use the highest-tier model available. Accuracy here directly impacts player expe
 
 ### Fallback
 If AI call fails: score = character_erudition * 0.5 (safe middle ground).
+
+---
+
+## E3: Palace Exam Rival Answers + Ranking
+
+### Purpose
+Generate 3 AI rival candidate answers and rank all 4 candidates (player + 3 rivals) for the Palace Exam competitive mechanic. Only used for 殿试.
+
+### Input
+```json
+{
+  "question_text": "string (the palace exam question)",
+  "player_answer": "string (player's submitted answer — already evaluated by E2)",
+  "player_score": 75,
+  "court_whims": { "style": "...", "emperor_temperament": "..." },
+  "dynasty_generation": 3,
+  "era": "prosperity | decline | invasion | restoration",
+  "rival_strength": "weak | moderate | strong"
+}
+```
+
+### Output Schema
+```json
+{
+  "rivals": [
+    {
+      "name": "string (generated rival name)",
+      "answer_summary": "string (1 sentence describing their approach)",
+      "score": 72,
+      "style": "conservative | bold | sycophantic | scholarly"
+    },
+    { "name": "...", "answer_summary": "...", "score": 68, "style": "..." },
+    { "name": "...", "answer_summary": "...", "score": 80, "style": "..." }
+  ],
+  "final_ranking": [
+    { "rank": 1, "name": "string", "title": "状元", "is_player": false },
+    { "rank": 2, "name": "string", "title": "榜眼", "is_player": true },
+    { "rank": 3, "name": "string", "title": "探花", "is_player": false },
+    { "rank": 4, "name": "string", "title": "进士", "is_player": false }
+  ],
+  "emperor_comment": "string (1 sentence — the emperor's remark on the top answer)"
+}
+```
+
+### Constraints
+- Rival scores MUST be generated BEFORE seeing player_score to avoid bias (in practice: prompt instructs model to generate rivals independently, then rank all 4)
+- `rival_strength` determines score ranges:
+  - weak: rivals score 40-65
+  - moderate: rivals score 55-80
+  - strong: rivals score 70-95
+- `final_ranking` MUST include exactly 4 entries, one with `is_player: true`
+- Ranking MUST be strictly by score (highest = 状元)
+- Rival names MUST be distinct and era-appropriate
+- `emperor_comment` MUST be under 50 characters
+
+### Rival Strength Determination
+```
+rival_strength = "weak" if dynasty_generation <= 2
+               = "moderate" if dynasty_generation <= 4
+               = "strong" if dynasty_generation >= 5
+```
+
+### Model Selection
+Use high-tier model (Sonnet/Opus). Temperature: 0.5 (some variety in rivals but fair ranking).
+
+### Fallback
+If AI call fails: generate 3 rivals with scores = [player_score - 10, player_score - 5, player_score + 5]. Player gets 榜眼 (2nd place) by default — safe but not triumphant.
 
 ---
 
@@ -378,7 +446,12 @@ If AI call fails: generate heirs procedurally (random name + random traits from 
 1. **Temperature**: 0.7 default, 0.3 for Judge (E2), 0.9 for narration (R1)
 2. **Max tokens**: 500 per call (most outputs are short)
 3. **Timeout**: 10 seconds hard limit, fallback triggers at timeout
-4. **Rate limiting**: Max 3 AI calls per player turn (batch if needed)
+4. **Rate limiting**: Max 5 AI calls per player action. A "player action" = one seasonal turn OR one exam attempt. Breakdown:
+   - Normal season (no event): 0-1 calls (action narration is optional)
+   - Season with event: V1 + optional V2 + optional N1 = 1-3 calls
+   - Exam turn: E1 + E2 + R1 = 3 calls (exam is its own action, not combined with daily life)
+   - Palace exam: E1 + E3 + R1 = 3 calls
+   - Inheritance: I1 + R1 = 2 calls
 5. **Context injection**: Always include relevant game state as system context
 6. **Language**: All AI output in Simplified Chinese unless player language setting differs
 7. **Content safety**: No graphic violence, no sexual content, no modern political references

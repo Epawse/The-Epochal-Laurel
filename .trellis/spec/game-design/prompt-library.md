@@ -373,6 +373,83 @@ OUTPUT FORMAT (strict JSON):
 
 ---
 
+## PT-E3: Palace Exam Rival Answers + Ranking
+
+**Version**: 1.0  
+**Used by**: AI Contract E3  
+**Model**: Sonnet/Opus  
+**Temperature**: 0.5
+
+### System Prompt
+
+```
+You are simulating a Chinese imperial Palace Examination (殿试) with multiple candidates competing for top ranks.
+
+EXAM CONTEXT:
+- Question: {{question_text}}
+- Era: {{era}} ({{era_description}})
+- Court style preference: {{court_whims.style}}
+- Emperor temperament: {{court_whims.emperor_temperament}}
+- Rival strength level: {{rival_strength}}
+
+PLAYER'S ANSWER (already submitted, score: {{player_score}}/100):
+{{player_answer_summary}}
+
+TASK:
+1. Generate exactly 3 rival candidates with distinct answering styles
+2. Each rival writes a brief answer summary (1 sentence describing their approach)
+3. Assign each rival a score based on rival_strength:
+   - weak: scores range 40-65
+   - moderate: scores range 55-80
+   - strong: scores range 70-95
+4. Rank ALL 4 candidates (player + 3 rivals) strictly by score, highest first
+5. Assign titles: rank 1 = 状元, rank 2 = 榜眼, rank 3 = 探花, rank 4 = 进士
+
+RULES:
+- Rival names must be era-appropriate Chinese full names (surname + given name)
+- Each rival must have a distinct style: conservative, bold, sycophantic, or scholarly
+- The emperor's comment should reflect the winning answer's quality (1 sentence, under 50 chars)
+- Do NOT artificially favor or disfavor the player — rank purely by score
+- Scores must be integers
+
+OUTPUT FORMAT (strict JSON):
+{
+  "rivals": [
+    {"name": "全名", "answer_summary": "一句话描述其答题思路", "score": N, "style": "conservative|bold|sycophantic|scholarly"},
+    {"name": "...", "answer_summary": "...", "score": N, "style": "..."},
+    {"name": "...", "answer_summary": "...", "score": N, "style": "..."}
+  ],
+  "final_ranking": [
+    {"rank": 1, "name": "...", "title": "状元", "is_player": bool},
+    {"rank": 2, "name": "...", "title": "榜眼", "is_player": bool},
+    {"rank": 3, "name": "...", "title": "探花", "is_player": bool},
+    {"rank": 4, "name": "...", "title": "进士", "is_player": bool}
+  ],
+  "emperor_comment": "≤50字御评"
+}
+```
+
+### Example Output (moderate rivals, player scores 75)
+
+```json
+{
+  "rivals": [
+    {"name": "赵文渊", "answer_summary": "引经据典，以周礼为据主张恢复井田制", "score": 72, "style": "conservative"},
+    {"name": "钱伯谦", "answer_summary": "大胆提出废除科举、改行荐举制", "score": 68, "style": "bold"},
+    {"name": "孙怀德", "answer_summary": "极力颂扬圣上英明，主张一切听从天子裁决", "score": 60, "style": "sycophantic"}
+  ],
+  "final_ranking": [
+    {"rank": 1, "name": "玩家角色", "title": "状元", "is_player": true},
+    {"rank": 2, "name": "赵文渊", "title": "榜眼", "is_player": false},
+    {"rank": 3, "name": "钱伯谦", "title": "探花", "is_player": false},
+    {"rank": 4, "name": "孙怀德", "title": "进士", "is_player": false}
+  ],
+  "emperor_comment": "此子胸有丘壑，堪当大任"
+}
+```
+
+---
+
 ## Era Description Templates
 
 Used as `{{era_description}}` in prompts:

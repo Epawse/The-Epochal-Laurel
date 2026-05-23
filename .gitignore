@@ -33,3 +33,9 @@ public/assets/_rejected/
 
 # Vercel
 .vercel
+
+# Supabase local
+supabase/.temp/
+
+# TypeScript
+tsconfig.tsbuildinfo

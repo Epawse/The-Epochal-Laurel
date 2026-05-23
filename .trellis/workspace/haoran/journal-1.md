@@ -137,3 +137,36 @@ Completed Phase 0 foundation: implemented globals.css with Tailwind v4 design to
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Tasks 2 & 3: Game Engine Core + UI Components
+
+**Date**: 2026-05-23
+**Task**: Tasks 2 & 3: Game Engine Core + UI Components
+**Branch**: `main`
+
+### Summary
+
+Implemented lib/engine/ (rng, balance, exam, lineage, inheritance, reducer) with 86 Vitest tests, and components/ui/ + components/game/ + app/(game)/ pages (Landing with ink-bloom, Character Creation with origin selection). Both tasks verified: tsc, next build, vitest all pass.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e6eb520` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

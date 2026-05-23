@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
+- **Total Sessions**: 5
 - **Last Active**: 2026-05-23
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~139 | Active |
+| `journal-1.md` | ~172 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-05-23 | Tasks 2 & 3: Game Engine Core + UI Components | `e6eb520` | `main` |
 | 4 | 2026-05-23 | Task 1: Schema + Constants + Design System + Assets | `44a190d` | `main` |
 | 3 | 2026-05-23 | Art assets review + design system spec extraction | `06b05f6` | `main` |
 | 2 | 2026-05-23 | Multi-provider LLM layer: DeepSeek + Gemini API integration | `d8f9b18` | `task/llm-multi-provider-deepseek-gemini` |

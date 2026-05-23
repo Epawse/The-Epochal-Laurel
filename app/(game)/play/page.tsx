@@ -6,9 +6,10 @@ import { StatPanel } from "@/components/game/StatPanel";
 import { ActionCard } from "@/components/game/ActionCard";
 import { NarrativeStrip } from "@/components/game/NarrativeStrip";
 import { CourtHint } from "@/components/game/CourtHint";
+import { EventModal } from "@/components/game/EventModal";
 import { ACTIONS } from "@/lib/game/constants";
 import type { GameState, StatChanges } from "@/lib/game/schema";
-import { advanceTurn } from "@/lib/actions/game";
+import { advanceTurn, submitEventChoice, submitEventFreeInput } from "@/lib/actions/game";
 
 const ACTION_ICONS: Record<string, string> = {
   study: "/assets/action-study.png",
@@ -114,6 +115,7 @@ export default function PlayPage() {
   const isDanger = character.stats.drive <= 25;
   const nextExam = getNextExamCountdown(world.exam_schedule);
   const isInvasion = world.era === "invasion";
+  const hasEvent = gameState.current_event !== null;
 
   function handleAction(actionId: string) {
     if (!gameState || isPending) return;
@@ -122,11 +124,41 @@ export default function PlayPage() {
       const result = await advanceTurn(gameState, actionId);
       setGameState(result.state);
       setDeltas(result.statChanges);
-      setNarration(result.narration);
+
+      // Show NPC dialogue if available, otherwise show action narration
+      if (result.npcDialogue) {
+        setNarration(result.npcDialogue);
+      } else {
+        setNarration(result.narration);
+      }
 
       // Clear deltas after animation
       setTimeout(() => setDeltas({}), 1500);
     });
+  }
+
+  function handleEventChoice(choiceId: string) {
+    if (!gameState || isPending) return;
+
+    startTransition(async () => {
+      const result = await submitEventChoice(gameState, choiceId);
+      setGameState(result.state);
+      setNarration(result.narration);
+    });
+  }
+
+  function handleEventFreeInput(text: string) {
+    if (!gameState || isPending) return;
+
+    startTransition(async () => {
+      const result = await submitEventFreeInput(gameState, text);
+      setGameState(result.state);
+      setNarration(result.narration);
+    });
+  }
+
+  function handleEventClose() {
+    // Events cannot be dismissed without making a choice — no-op
   }
 
   return (
@@ -194,7 +226,7 @@ export default function PlayPage() {
                 key={action.id}
                 action={action}
                 iconSrc={ACTION_ICONS[action.id] ?? "/assets/action-study.png"}
-                disabled={isPending}
+                disabled={isPending || hasEvent}
                 onClick={() => handleAction(action.id)}
               />
             ))}
@@ -284,6 +316,17 @@ export default function PlayPage() {
           </div>
         </aside>
       </div>
+
+      {/* Event Modal Overlay */}
+      {hasEvent && gameState.current_event && (
+        <EventModal
+          event={gameState.current_event}
+          onChoice={handleEventChoice}
+          onFreeInput={handleEventFreeInput}
+          onClose={handleEventClose}
+          disabled={isPending}
+        />
+      )}
     </>
   );
 }

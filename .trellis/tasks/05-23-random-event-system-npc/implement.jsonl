@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/game-design/ai-contracts.md", "reason": "V1, V2, N1 contract specs — input/output schemas, model tiers, fallback behavior"}
+{"file": ".trellis/spec/game-design/prompt-library.md", "reason": "PT-V1, PT-V2, PT-N1 prompt templates"}
+{"file": ".trellis/spec/game-design/balance.md", "reason": "Event probability, NPC mechanics, court whims reveal"}
+{"file": ".trellis/spec/game-design/data-model.md", "reason": "NPC schema, memory cap, event structure"}
+{"file": ".trellis/spec/frontend/component-catalog.md", "reason": "EventModal component spec"}
+{"file": ".trellis/tasks/05-23-random-event-system-npc/prd.md", "reason": "Task requirements and acceptance criteria"}

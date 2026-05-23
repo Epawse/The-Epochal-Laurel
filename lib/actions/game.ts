@@ -1,11 +1,16 @@
 "use server";
 
-import type { GameState } from "@/lib/game/schema";
-import type { Origin, ExamLevel } from "@/lib/game/constants";
-import { createCharacter, advanceSeason } from "@/lib/engine/reducer";
+import type { GameState, Npc, CurrentEvent } from "@/lib/game/schema";
+import type { Origin, ExamLevel, EventType } from "@/lib/game/constants";
+import { createCharacter, advanceSeason, applyEventChoice } from "@/lib/engine/reducer";
 import { createRng } from "@/lib/engine/rng";
+import { applyStatChanges } from "@/lib/engine/balance";
 import { getSessionId } from "@/lib/db/client";
 import { loadSave, upsertSave } from "@/lib/db/queries";
+import { generateEvent } from "@/lib/ai/contracts/event";
+import { evaluateEventFreeInput } from "@/lib/ai/contracts/eventEval";
+import { generateNpcDialogue } from "@/lib/ai/contracts/npcDialogue";
+import type { V1Input, N1Input } from "@/lib/ai/schema";
 
 // ── Template Narrations ───────────────────────────────────────────────────────
 
@@ -47,6 +52,12 @@ const ACTION_NARRATIONS: Record<string, string[]> = {
   ],
 };
 
+// ── NPC Name Pools ────────────────────────────────────────────────────────────
+
+const NPC_SURNAMES = ["王", "李", "张", "刘", "陈", "杨", "赵", "黄", "周", "吴"];
+const NPC_GIVEN_NAMES = ["文远", "伯谦", "怀德", "子安", "明远", "仲达", "叔夜", "季常", "元亮", "公瑾"];
+const NPC_PERSONALITIES = ["strict", "warm", "corrupt", "idealistic"] as const;
+
 // ── newGame ───────────────────────────────────────────────────────────────────
 
 export async function newGame(
@@ -77,6 +88,7 @@ export async function newGame(
 export interface AdvanceTurnResult {
   state: GameState;
   narration: string;
+  npcDialogue: string | null;
   eventTrigger: string | null;
   statChanges: { erudition: number; fortune: number; drive: number; wealth: number };
   schemeExposed: boolean;
@@ -110,6 +122,149 @@ export async function advanceTurn(
     narration = "东窗事发！" + narration + " 然而行迹败露，名声大损。";
   }
 
+  // NPC interactions on socialize/scheme
+  let npcDialogue: string | null = null;
+  const npcRng = createRng(result.state.turn_number + 7777);
+
+  if (actionId === "socialize") {
+    // Try NPC dialogue with existing NPC
+    const aliveNpcs = result.state.npcs.filter((n) => n.alive);
+    if (aliveNpcs.length > 0) {
+      const targetNpc = aliveNpcs[npcRng.nextInt(0, aliveNpcs.length - 1)];
+      const dialogueInput: N1Input = {
+        npc: {
+          name: targetNpc.name,
+          role: targetNpc.role,
+          personality: targetNpc.personality,
+          memory: targetNpc.memory.map((m) => ({ event: m.event, sentiment: m.sentiment })),
+        },
+        character_name: result.state.character.name,
+        interaction_type: "greeting",
+        world_context: {
+          era: result.state.world.era,
+          season: result.state.world.season,
+        },
+      };
+      const dialogue = await generateNpcDialogue(dialogueInput);
+      npcDialogue = `${targetNpc.name}：「${dialogue.dialogue}」`;
+
+      // Apply relationship delta
+      const npcIdx = result.state.npcs.findIndex((n) => n.id === targetNpc.id);
+      if (npcIdx >= 0) {
+        addNpcMemory(result.state.npcs[npcIdx], "交游互动", "positive", result.state.turn_number);
+        // Update affinity in character relationships
+        const rel = result.state.character.relationships.find((r) => r.npc_id === targetNpc.id);
+        if (rel) {
+          rel.affinity = Math.max(-50, Math.min(100, rel.affinity + dialogue.relationship_delta));
+        }
+      }
+
+      // Court whims reveal via patron NPC
+      if (targetNpc.role === "patron") {
+        const rel = result.state.character.relationships.find((r) => r.npc_id === targetNpc.id);
+        if (rel && rel.affinity >= 40 && result.state.world.court_whims_revealed.temperament_known !== "full") {
+          result.state.world.court_whims_revealed.temperament_known = "full";
+          result.state.world.court_whims_revealed.temperament_eliminated = [];
+          npcDialogue += " （获悉圣上性情）";
+        }
+      }
+
+      // Court whims partial reveal via socialize with fortune >= 30
+      if (
+        result.state.character.stats.fortune >= 30 &&
+        result.state.world.court_whims_revealed.temperament_known === "hidden"
+      ) {
+        // Eliminate 2 of 4 temperament options
+        const allTemperaments = ["ambitious", "lazy", "paranoid", "benevolent"];
+        const actual = result.state.world.court_whims.emperor_temperament;
+        const others = allTemperaments.filter((t) => t !== actual);
+        // Pick 2 to eliminate
+        const eliminated = others.slice(0, 2);
+        result.state.world.court_whims_revealed.temperament_known = "partial";
+        result.state.world.court_whims_revealed.temperament_eliminated = eliminated;
+      }
+    }
+
+    // 30% chance to create a new NPC (if < 5 NPCs exist)
+    if (result.state.npcs.filter((n) => n.alive).length < 5 && npcRng.next() < 0.30) {
+      const newNpc = createRandomNpc(result.state, npcRng, "friend");
+      result.state.npcs.push(newNpc);
+      result.state.character.relationships.push({
+        npc_id: newNpc.id,
+        type: "mentor",
+        affinity: 30,
+      });
+      if (!npcDialogue) {
+        npcDialogue = `结识了${newNpc.name}（${npcRoleLabel(newNpc.role)}）。`;
+      }
+    }
+  }
+
+  if (actionId === "scheme") {
+    // 20% chance to create a patron NPC
+    if (result.state.npcs.filter((n) => n.alive).length < 5 && npcRng.next() < 0.20) {
+      const newNpc = createRandomNpc(result.state, npcRng, "patron");
+      result.state.npcs.push(newNpc);
+      result.state.character.relationships.push({
+        npc_id: newNpc.id,
+        type: "patron",
+        affinity: 25,
+      });
+      npcDialogue = `结识了${newNpc.name}（${npcRoleLabel(newNpc.role)}），或可为仕途助力。`;
+    }
+  }
+
+  // Generate event if triggered
+  if (result.eventTrigger && !result.characterDied) {
+    const eventType = result.eventTrigger as EventType;
+    const v1Input: V1Input = {
+      character: {
+        name: result.state.character.name,
+        age: result.state.character.age,
+        erudition: result.state.character.stats.erudition,
+        fortune: result.state.character.stats.fortune,
+        drive: result.state.character.stats.drive,
+        titles: result.state.character.titles,
+        traits: result.state.character.traits,
+      },
+      world: {
+        era: result.state.world.era,
+        season: result.state.world.season,
+        year: result.state.world.year,
+      },
+      event_type: eventType,
+      recent_events: result.state.world.events_this_era.slice(-3),
+      available_npcs: result.state.npcs
+        .filter((n) => n.alive)
+        .map((n) => ({ name: n.name, role: n.role })),
+    };
+
+    const v1Event = await generateEvent(v1Input);
+
+    // Map V1Event to CurrentEvent schema
+    const currentEvent: CurrentEvent = {
+      id: `evt_${result.state.turn_number}_${Date.now() % 10000}`,
+      type: eventType,
+      title: v1Event.title,
+      description: v1Event.description,
+      choices: v1Event.choices.map((c) => ({
+        id: c.id,
+        label: c.label,
+        stat_changes: c.stat_changes,
+        risk: null,
+        narrative_hint: c.narrative_preview,
+      })),
+      allows_free_input: v1Event.allows_free_input,
+      context_for_judge: {
+        relevant_npcs: result.state.npcs.filter((n) => n.alive).map((n) => n.name),
+        relevant_items: result.state.character.inventory.map((i) => i.name),
+      },
+    };
+
+    result.state.current_event = currentEvent;
+    result.state.world.events_this_era.push(v1Event.title);
+  }
+
   // Persist updated state
   try {
     await upsertSave(sessionId, result.state);
@@ -120,6 +275,7 @@ export async function advanceTurn(
   return {
     state: result.state,
     narration,
+    npcDialogue,
     eventTrigger: result.eventTrigger,
     statChanges: result.statChanges,
     schemeExposed: result.schemeExposed,
@@ -128,25 +284,563 @@ export async function advanceTurn(
   };
 }
 
-// ── Placeholder stubs ─────────────────────────────────────────────────────────
+// ── submitEventChoice ─────────────────────────────────────────────────────────
+
+export interface EventChoiceResult {
+  state: GameState;
+  narration: string;
+}
+
+export async function submitEventChoice(
+  currentState: GameState,
+  choiceId: string
+): Promise<EventChoiceResult> {
+  const sessionId = await getSessionId();
+
+  // Use the engine's applyEventChoice to apply stat changes and clear event
+  const newState = applyEventChoice(currentState, choiceId);
+
+  // Get the chosen option's narrative hint for narration
+  const choice = currentState.current_event?.choices.find((c) => c.id === choiceId);
+  const narration = choice?.narrative_hint || "事情就这样过去了。";
+
+  // Persist
+  try {
+    await upsertSave(sessionId, newState);
+  } catch (e) {
+    console.warn("Failed to persist game state:", e);
+  }
+
+  return { state: newState, narration };
+}
+
+// ── submitEventFreeInput ──────────────────────────────────────────────────────
+
+export interface EventFreeInputResult {
+  state: GameState;
+  narration: string;
+  success: boolean;
+}
+
+export async function submitEventFreeInput(
+  currentState: GameState,
+  freeText: string
+): Promise<EventFreeInputResult> {
+  const sessionId = await getSessionId();
+
+  if (!currentState.current_event) {
+    return { state: currentState, narration: "没有待处理的事件。", success: false };
+  }
+
+  const event = currentState.current_event;
+
+  // Call V2 to evaluate the player's creative solution
+  const evalResult = await evaluateEventFreeInput({
+    event_title: event.title,
+    event_description: event.description,
+    player_input: freeText,
+    character_stats: {
+      erudition: currentState.character.stats.erudition,
+      fortune: currentState.character.stats.fortune,
+      drive: currentState.character.stats.drive,
+    },
+    character_items: currentState.character.inventory.map((i) => i.name),
+    available_npcs: currentState.npcs
+      .filter((n) => n.alive)
+      .map((n) => ({ name: n.name, role: n.role })),
+  });
+
+  // Apply stat changes
+  const newState = structuredClone(currentState) as GameState;
+  newState.character.stats = applyStatChanges(
+    newState.character.stats,
+    evalResult.stat_changes
+  );
+
+  // Handle NPC reaction if present
+  if (evalResult.npc_reaction) {
+    const npc = newState.npcs.find((n) => n.name === evalResult.npc_reaction!.npc_name);
+    if (npc) {
+      addNpcMemory(npc, evalResult.npc_reaction.reaction, "notable", newState.turn_number);
+      const rel = newState.character.relationships.find((r) => r.npc_id === npc.id);
+      if (rel) {
+        rel.affinity = Math.max(-50, Math.min(100, rel.affinity + evalResult.npc_reaction.relationship_delta));
+      }
+    }
+  }
+
+  // Clear event
+  newState.current_event = null;
+
+  // Persist
+  try {
+    await upsertSave(sessionId, newState);
+  } catch (e) {
+    console.warn("Failed to persist game state:", e);
+  }
+
+  return {
+    state: newState,
+    narration: evalResult.narrative_result,
+    success: evalResult.success,
+  };
+}
+
+// ── NPC Helpers ───────────────────────────────────────────────────────────────
+
+function createRandomNpc(
+  state: GameState,
+  rng: { nextInt: (min: number, max: number) => number; next: () => number },
+  role: Npc["role"]
+): Npc {
+  const surname = NPC_SURNAMES[rng.nextInt(0, NPC_SURNAMES.length - 1)];
+  const given = NPC_GIVEN_NAMES[rng.nextInt(0, NPC_GIVEN_NAMES.length - 1)];
+  const personality = NPC_PERSONALITIES[rng.nextInt(0, NPC_PERSONALITIES.length - 1)];
+
+  return {
+    id: `npc_${state.turn_number}_${rng.nextInt(1000, 9999)}`,
+    name: `${surname}${given}`,
+    role,
+    personality,
+    era_introduced: state.world.era,
+    generation_introduced: state.character.generation,
+    alive: true,
+    memory: [],
+  };
+}
+
+function addNpcMemory(npc: Npc, event: string, sentiment: string, turn: number): void {
+  // Cap at 10 entries — drop oldest when full
+  if (npc.memory.length >= 10) {
+    npc.memory.shift();
+  }
+  npc.memory.push({ event, sentiment, turn });
+}
+
+function npcRoleLabel(role: string): string {
+  const labels: Record<string, string> = {
+    mentor: "恩师",
+    rival: "对手",
+    patron: "贵人",
+    friend: "友人",
+    examiner: "考官",
+    spouse: "配偶",
+  };
+  return labels[role] ?? role;
+}
+
+// ── getExamQuestion ──────────────────────────────────────────────────────────
+
+import { EXAM_REWARDS } from "@/lib/game/constants";
+import {
+  scoreFixedChoice,
+  scoreFreeText,
+  examThreshold,
+  evaluateRiskCondition,
+  type RiskCondition,
+  type CourtWhims,
+} from "@/lib/engine/exam";
+import { generateExamQuestion } from "@/lib/ai/contracts/examQuestion";
+import { evaluateFreeText } from "@/lib/ai/contracts/judge";
+import { generateNarration } from "@/lib/ai/contracts/narrate";
+import type { E1ExamQuestion } from "@/lib/ai/schema";
+
+export async function getExamQuestion(
+  currentState: GameState,
+  examLevel: ExamLevel
+): Promise<E1ExamQuestion> {
+  const previousQuestions = currentState.character.exam_history
+    .filter((e) => e.level === examLevel)
+    .map(() => ""); // simplified: don't track question text across sessions
+
+  return generateExamQuestion({
+    exam_level: examLevel,
+    era: currentState.world.era,
+    court_whims: {
+      style: currentState.world.court_whims.style,
+      emperor_temperament: currentState.world.court_whims.emperor_temperament,
+    },
+    year: currentState.world.year,
+    character_erudition: currentState.character.stats.erudition,
+    previous_questions_this_run: previousQuestions.filter(Boolean),
+  });
+}
+
+// ── submitExamAnswer ─────────────────────────────────────────────────────────
+
+export interface ExamResult {
+  passed: boolean;
+  score: number;
+  threshold: number | null;
+  title: string | null;
+  narration: string;
+  soundCue: string;
+  statChanges: { erudition: number; fortune: number; drive: number; wealth: number };
+  judgeNarrative: string | null;
+  riskTriggered: boolean;
+  riskPenalty: { drive: number; fortune: number } | null;
+  state: GameState;
+}
 
 export async function submitExamAnswer(
-  _examLevel: ExamLevel,
-  _choiceId: string,
-  _freeText?: string
-): Promise<{ error: string }> {
-  return { error: "Not implemented yet — Task 5" };
+  currentState: GameState,
+  examLevel: ExamLevel,
+  question: E1ExamQuestion,
+  choiceId: string | null,
+  freeText: string | null,
+  cheatSheetActive: boolean
+): Promise<ExamResult> {
+  const sessionId = await getSessionId();
+  const { character, world } = currentState;
+  const erudition = character.stats.erudition;
+
+  let score: number;
+  let judgeNarrative: string | null = null;
+  let riskTriggered = false;
+  let riskPenalty: { drive: number; fortune: number } | null = null;
+
+  if (freeText && freeText.trim().length > 0) {
+    // ── Free-text path: call E2 Judge ──
+    const judgeResult = await evaluateFreeText({
+      question_text: question.question_text,
+      player_answer: freeText,
+      court_whims: {
+        style: world.court_whims.style,
+        emperor_temperament: world.court_whims.emperor_temperament,
+      },
+      exam_level: examLevel,
+      character_erudition: erudition,
+      character_items: character.inventory.map((i) => i.name),
+    });
+
+    // Free-text score: judge_lm_score * 0.7 + erudition * 0.3
+    // With cheat sheet: erudition * 0.6 instead of * 0.3
+    const eruditionBonus = cheatSheetActive ? erudition * 0.6 : erudition * 0.3;
+    score = Math.round(
+      Math.max(0, Math.min(100, judgeResult.total_score * 0.7 + eruditionBonus))
+    );
+    judgeNarrative = judgeResult.judge_narrative;
+    // No risk evaluation for free-text answers
+  } else if (choiceId) {
+    // ── Fixed choice path ──
+    const choice = question.choices.find((c) => c.id === choiceId);
+    if (!choice) {
+      throw new Error(`Invalid choice ID: ${choiceId}`);
+    }
+
+    // Court whims alignment bonus
+    let courtWhimsBonus = 0;
+    if (choice.alignment === "full") courtWhimsBonus = 20;
+    else if (choice.alignment === "partial") courtWhimsBonus = 10;
+
+    // Fixed choice score: base + erudition*0.3 + court_whims_bonus
+    // With cheat sheet: erudition*0.6 instead of *0.3
+    const eruditionBonus = cheatSheetActive ? erudition * 0.6 : erudition * 0.3;
+    score = Math.round(
+      Math.max(0, Math.min(100, choice.base_score + eruditionBonus + courtWhimsBonus))
+    );
+
+    // Evaluate risk condition
+    if (choice.risk) {
+      const courtWhims: CourtWhims = {
+        style: world.court_whims.style,
+        emperor_temperament: world.court_whims.emperor_temperament,
+      };
+      // For risk evaluation: the choice's alignment field tells us how well it
+      // aligns with court preferences. We construct a ChoiceAlignment object
+      // that the engine's evaluateRiskCondition can check.
+      const choiceAlignment = {
+        style: choice.alignment === "full" || choice.alignment === "partial"
+          ? world.court_whims.style
+          : undefined,
+        temperament: choice.alignment === "full"
+          ? world.court_whims.emperor_temperament
+          : undefined,
+      };
+
+      const triggered = evaluateRiskCondition(
+        choice.risk.condition as RiskCondition,
+        courtWhims,
+        choiceAlignment
+      );
+
+      if (triggered) {
+        riskTriggered = true;
+        riskPenalty = {
+          drive: choice.risk.penalty.drive,
+          fortune: choice.risk.penalty.fortune,
+        };
+      }
+    }
+  } else {
+    throw new Error("Must provide either choiceId or freeText");
+  }
+
+  // Determine pass/fail
+  const threshold = examThreshold(
+    examLevel,
+    world.era,
+    character.generation,
+    character.stats.fortune
+  );
+  const passed = threshold === null ? true : score >= threshold;
+
+  // Award title if passed
+  let title: string | null = null;
+  const newState = structuredClone(currentState) as GameState;
+
+  if (passed) {
+    title = EXAM_REWARDS[examLevel];
+    if (title && !newState.character.titles.includes(title)) {
+      newState.character.titles.push(title);
+    }
+  }
+
+  // Record exam history
+  newState.character.exam_history.push({
+    level: examLevel,
+    year: world.year,
+    result: passed ? "pass" : "fail",
+    score,
+  });
+
+  // Apply risk penalty if triggered
+  const statChanges = { erudition: 0, fortune: 0, drive: 0, wealth: 0 };
+  if (riskTriggered && riskPenalty) {
+    statChanges.drive = riskPenalty.drive;
+    statChanges.fortune = riskPenalty.fortune;
+    newState.character.stats = applyStatChanges(newState.character.stats, {
+      erudition: 0,
+      fortune: riskPenalty.fortune,
+      drive: riskPenalty.drive,
+      wealth: 0,
+    });
+  }
+
+  // Drive cost for taking exam
+  const examDriveCost = -5;
+  statChanges.drive += examDriveCost;
+  newState.character.stats = applyStatChanges(newState.character.stats, {
+    erudition: 0,
+    fortune: 0,
+    drive: examDriveCost,
+    wealth: 0,
+  });
+
+  // Generate narration via R1
+  const narrationResult = await generateNarration({
+    event_type: passed ? "exam_pass" : "exam_fail",
+    context: {
+      character_name: character.name,
+      detail: `${examLevel} exam, score ${score}/${threshold ?? 100}. ${title ? `Awarded title: ${title}` : ""}`,
+    },
+    tone: passed ? "triumphant" : "tragic",
+  });
+
+  // Persist updated state
+  try {
+    await upsertSave(sessionId, newState);
+  } catch (e) {
+    console.warn("Failed to persist game state:", e);
+  }
+
+  return {
+    passed,
+    score,
+    threshold,
+    title,
+    narration: narrationResult.narration,
+    soundCue: narrationResult.sound_cue,
+    statChanges,
+    judgeNarrative,
+    riskTriggered,
+    riskPenalty,
+    state: newState,
+  };
 }
+
+// ── useTool ──────────────────────────────────────────────────────────────────
+
+export interface ToolResult {
+  success: boolean;
+  message: string;
+  effect?: string;
+  state: GameState;
+  bestChoice?: string;
+  exposed?: boolean;
+  reEvalPassed?: boolean;
+}
+
+export async function useToolAction(
+  currentState: GameState,
+  toolId: string,
+  context?: {
+    examLevel?: ExamLevel;
+    question?: E1ExamQuestion;
+  }
+): Promise<ToolResult> {
+  const sessionId = await getSessionId();
+  const newState = structuredClone(currentState) as GameState;
+  const rng = createRng(newState.rng_seed);
+
+  switch (toolId) {
+    case "cheat_sheet": {
+      if (newState.world.auxiliary_tools.cheat_sheet_used_this_cycle) {
+        return { success: false, message: "本轮已使用过小抄。", state: currentState };
+      }
+      if (newState.character.stats.fortune < 10) {
+        return { success: false, message: "运势不足，无法使用小抄。", state: currentState };
+      }
+
+      // Apply cost: Fortune -10
+      newState.character.stats = applyStatChanges(newState.character.stats, {
+        erudition: 0, fortune: -10, drive: 0, wealth: 0,
+      });
+      newState.world.auxiliary_tools.cheat_sheet_used_this_cycle = true;
+
+      // Check exposure (15% chance)
+      const exposureRoll = rng.nextFloat(0, 1);
+      const exposed = exposureRoll < 0.15;
+
+      if (exposed) {
+        // Exposure penalty: exam ban 1 cycle + drive -20 + fortune -15
+        newState.character.stats = applyStatChanges(newState.character.stats, {
+          erudition: 0, fortune: -15, drive: -20, wealth: 0,
+        });
+        newState.character.status_effects.push({
+          type: "exam_ban",
+          turns_remaining: 12,
+        });
+        newState.rng_seed = rng.nextInt(0, 2147483647);
+        try { await upsertSave(sessionId, newState); } catch (e) { console.warn("Failed to persist:", e); }
+        return {
+          success: false,
+          message: "东窗事发！夹带被搜出，考官震怒，逐出考场！",
+          effect: "exam_ban",
+          state: newState,
+          exposed: true,
+        };
+      }
+
+      newState.rng_seed = rng.nextInt(0, 2147483647);
+      try { await upsertSave(sessionId, newState); } catch (e) { console.warn("Failed to persist:", e); }
+      return {
+        success: true,
+        message: "小抄藏好，心中稍安。学识加成翻倍。",
+        effect: "erudition_doubled",
+        state: newState,
+        exposed: false,
+      };
+    }
+
+    case "insider_tip": {
+      if (newState.world.auxiliary_tools.insider_tip_used_this_cycle) {
+        return { success: false, message: "本轮已使用过榜眼引路。", state: currentState };
+      }
+      if (newState.character.stats.wealth < 15) {
+        return { success: false, message: "银两不足，无法打点。", state: currentState };
+      }
+
+      // Apply cost: Wealth -15
+      newState.character.stats = applyStatChanges(newState.character.stats, {
+        erudition: 0, fortune: 0, drive: 0, wealth: -15,
+      });
+      newState.world.auxiliary_tools.insider_tip_used_this_cycle = true;
+
+      // Find the best-aligned choice from the question
+      let bestChoice = "a";
+      if (context?.question) {
+        const choices = context.question.choices;
+        const fullMatch = choices.find((c) => c.alignment === "full");
+        if (fullMatch) {
+          bestChoice = fullMatch.id;
+        } else {
+          const partialMatch = choices.find((c) => c.alignment === "partial");
+          if (partialMatch) bestChoice = partialMatch.id;
+        }
+      }
+
+      newState.rng_seed = rng.nextInt(0, 2147483647);
+      try { await upsertSave(sessionId, newState); } catch (e) { console.warn("Failed to persist:", e); }
+      return {
+        success: true,
+        message: `消息灵通人士透露：选「${bestChoice.toUpperCase()}」最合圣意。`,
+        effect: "choice_revealed",
+        state: newState,
+        bestChoice,
+      };
+    }
+
+    case "mentor_plea": {
+      if (newState.world.auxiliary_tools.mentor_plea_used_this_cycle) {
+        return { success: false, message: "本轮已使用过恩师引荐。", state: currentState };
+      }
+
+      // Find mentor with affinity >= 60
+      const mentorRel = newState.character.relationships.find(
+        (r) => r.type === "mentor" && r.affinity >= 60
+      );
+      if (!mentorRel) {
+        return { success: false, message: "无恩师可引荐，或恩师情谊不足。", state: currentState };
+      }
+
+      // Check if last exam was a failure
+      const lastExam = newState.character.exam_history[newState.character.exam_history.length - 1];
+      if (!lastExam || lastExam.result !== "fail") {
+        return { success: false, message: "恩师引荐仅在落第后可用。", state: currentState };
+      }
+
+      // Apply cost: mentor affinity -20
+      mentorRel.affinity -= 20;
+      newState.world.auxiliary_tools.mentor_plea_used_this_cycle = true;
+
+      // Re-evaluate with threshold -15
+      const examLevel = lastExam.level as ExamLevel;
+      const originalThreshold = examThreshold(
+        examLevel,
+        newState.world.era,
+        newState.character.generation,
+        newState.character.stats.fortune
+      );
+
+      if (originalThreshold === null) {
+        return { success: false, message: "殿试不可使用恩师引荐。", state: currentState };
+      }
+
+      const newThreshold = originalThreshold - 15;
+      const reEvalPassed = lastExam.score >= newThreshold;
+
+      if (reEvalPassed) {
+        lastExam.result = "pass";
+        const title = EXAM_REWARDS[examLevel];
+        if (title && !newState.character.titles.includes(title)) {
+          newState.character.titles.push(title);
+        }
+      }
+
+      newState.rng_seed = rng.nextInt(0, 2147483647);
+      try { await upsertSave(sessionId, newState); } catch (e) { console.warn("Failed to persist:", e); }
+      return {
+        success: true,
+        message: reEvalPassed
+          ? "恩师力荐，考官复阅卷宗，终得通过！"
+          : "恩师虽已尽力，奈何差距太大，仍未通过。",
+        effect: reEvalPassed ? "re_eval_pass" : "re_eval_fail",
+        state: newState,
+        reEvalPassed,
+      };
+    }
+
+    default:
+      return { success: false, message: `未知工具: ${toolId}`, state: currentState };
+  }
+}
+
+// ── chooseHeir (placeholder) ─────────────────────────────────────────────────
 
 export async function chooseHeir(
   _heirIndex: number,
   _blessingIds: string[]
 ): Promise<{ error: string }> {
   return { error: "Not implemented yet — Task 7" };
-}
-
-export async function useTool(
-  _toolId: string
-): Promise<{ error: string }> {
-  return { error: "Not implemented yet — Task 5" };
 }

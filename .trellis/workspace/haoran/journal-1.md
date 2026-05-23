@@ -236,3 +236,36 @@ Implemented exam flow (E1/E2/R1 AI contracts, exam page, ResultOverlay, 3 auxili
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Task 7: Inheritance + Generational Transition
+
+**Date**: 2026-05-23
+**Task**: Task 7: Inheritance + Generational Transition
+**Branch**: `main`
+
+### Summary
+
+Implemented I1 heir generation AI contract, chooseHeir server action with legacy tokens and era transitions, inheritance page with heir selection and blessing shop, EraTransition component with ink-wipe animation, and death detection in daily loop.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3e9f657` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

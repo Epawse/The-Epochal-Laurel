@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/frontend/component-catalog.md", "reason": "Component specs — all 17 components with props, states, and layout details"}
+{"file": ".trellis/spec/frontend/screen-map.md", "reason": "Screen layouts, routes, and asset dependencies for Landing and Create pages"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Server vs client components, props typing, styling, accessibility rules"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Zustand store pattern and state split rules"}
+{"file": ".trellis/spec/frontend/motion-patterns.md", "reason": "Framer Motion variants and CSS keyframe specs for animations"}
+{"file": ".trellis/spec/frontend/design-tokens.md", "reason": "Color palette, typography, spacing — visual reference for component styling"}
+{"file": "local/claude-design-prototype/styles.css", "reason": "Reference CSS implementation — exact measurements, colors, transitions"}
+{"file": ".trellis/tasks/05-23-ui-component-library-landing-create/prd.md", "reason": "Task requirements and acceptance criteria"}

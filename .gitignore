@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Next.js
+.next/
+out/
+
+# Build
+dist/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Asset generation workspace (not deployed)
+local/
+public/assets/_workspace/
+public/assets/_rejected/
+*.psd
+*.ai
+
+# Vercel
+.vercel

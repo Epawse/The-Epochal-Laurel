@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { TopBar } from "@/components/game/TopBar";
 import { StatPanel } from "@/components/game/StatPanel";
 import { ActionCard } from "@/components/game/ActionCard";
@@ -9,7 +10,7 @@ import { CourtHint } from "@/components/game/CourtHint";
 import { EventModal } from "@/components/game/EventModal";
 import { ACTIONS } from "@/lib/game/constants";
 import type { GameState, StatChanges } from "@/lib/game/schema";
-import { advanceTurn, submitEventChoice, submitEventFreeInput } from "@/lib/actions/game";
+import { advanceTurn, submitEventChoice, submitEventFreeInput, useToolAction } from "@/lib/actions/game";
 
 const ACTION_ICONS: Record<string, string> = {
   study: "/assets/action-study.png",
@@ -65,12 +66,14 @@ function getNextExamCountdown(examSchedule: {
 }
 
 export default function PlayPage() {
+  const router = useRouter();
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [deltas, setDeltas] = useState<Partial<StatChanges>>({});
   const [narration, setNarration] = useState(
     "新的一天开始了。准备好踏上科举之路吧。"
   );
   const [isPending, startTransition] = useTransition();
+  const [toolMessage, setToolMessage] = useState<string | null>(null);
 
   // Load game state from sessionStorage on mount
   useEffect(() => {
@@ -276,8 +279,9 @@ export default function PlayPage() {
             </div>
             <button
               type="button"
-              disabled={nextExam.seasons > 0}
-              className="mt-3 w-full px-4 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.22em] transition-all duration-200 disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:cursor-not-allowed"
+              disabled={nextExam.seasons > 0 || hasEvent}
+              onClick={() => router.push("/play/exam")}
+              className="mt-3 w-full px-4 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.22em] transition-all duration-200 disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:cursor-not-allowed disabled:bg-none"
               aria-label="Enter examination"
             >
               参加考试

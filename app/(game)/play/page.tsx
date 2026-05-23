@@ -10,7 +10,7 @@ import { CourtHint } from "@/components/game/CourtHint";
 import { EventModal } from "@/components/game/EventModal";
 import { ACTIONS } from "@/lib/game/constants";
 import type { GameState, StatChanges } from "@/lib/game/schema";
-import { advanceTurn, submitEventChoice, submitEventFreeInput, useToolAction } from "@/lib/actions/game";
+import { advanceTurn, submitEventChoice, submitEventFreeInput, useToolAction, generateHeirsAction } from "@/lib/actions/game";
 
 const ACTION_ICONS: Record<string, string> = {
   study: "/assets/action-study.png",
@@ -137,6 +137,35 @@ export default function PlayPage() {
 
       // Clear deltas after animation
       setTimeout(() => setDeltas({}), 1500);
+
+      // Death detection — trigger inheritance
+      if (result.characterDied && result.deathReason) {
+        // Brief delay to show the death narration before transitioning
+        setTimeout(async () => {
+          const heirsResult = await generateHeirsAction(result.state, result.deathReason!);
+
+          if (heirsResult.gameOver) {
+            // Family line dies out — game over (F tier)
+            sessionStorage.setItem("game_over", JSON.stringify({
+              state: result.state,
+              reason: "family_extinct",
+            }));
+            router.push("/leaderboard");
+            return;
+          }
+
+          // Store inheritance data and navigate to inherit page
+          sessionStorage.setItem("inheritance_data", JSON.stringify({
+            state: result.state,
+            heirs: heirsResult.heirs,
+            legacyTokens: heirsResult.legacyTokens,
+            blessingPoints: heirsResult.blessingPoints,
+            isAdoption: heirsResult.isAdoption,
+            deathReason: heirsResult.deathReason,
+          }));
+          router.push("/inherit");
+        }, 1500);
+      }
     });
   }
 

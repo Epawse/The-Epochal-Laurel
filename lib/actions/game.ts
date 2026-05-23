@@ -836,11 +836,221 @@ export async function useToolAction(
   }
 }
 
-// ── chooseHeir (placeholder) ─────────────────────────────────────────────────
+// ── generateHeirsAction ──────────────────────────────────────────────────────
+
+import { generateHeirs as generateHeirsAI } from "@/lib/ai/contracts/heirs";
+import { countHeirs, canAdopt } from "@/lib/engine/lineage";
+import {
+  calculateLegacyTokens,
+  calculateBlessingPoints,
+  type LegacyTokens,
+  type AchievementFlags,
+} from "@/lib/engine/inheritance";
+import { resolveInheritance } from "@/lib/engine/reducer";
+import type { I1Input, I1Heirs } from "@/lib/ai/schema";
+
+export interface GenerateHeirsResult {
+  heirs: I1Heirs["heirs"];
+  legacyTokens: LegacyTokens;
+  blessingPoints: number;
+  isAdoption: boolean;
+  gameOver: boolean;
+  deathReason: "drive_zero" | "max_age";
+}
+
+export async function generateHeirsAction(
+  currentState: GameState,
+  deathReason: "drive_zero" | "max_age"
+): Promise<GenerateHeirsResult> {
+  const { character, dynasty, world } = currentState;
+
+  // Calculate legacy tokens
+  const legacyTokens = calculateLegacyTokens(character);
+
+  // Calculate achievements for blessing points
+  const achievements: AchievementFlags = {
+    firstExamPass: character.exam_history.some((e) => e.result === "pass") &&
+      dynasty.ancestors.every((a) => a.highest_title === "白身" || a.generation === character.generation),
+    survivedCatastrophe: character.status_effects.some((e) => e.type === "catastrophe_survivor"),
+    reachedAge70: character.age >= 70,
+    raised3Sons: character.family.children.filter((c) => c.is_son && c.alive).length >= 3,
+  };
+  const blessingPoints = calculateBlessingPoints(legacyTokens, achievements) + dynasty.blessing_points;
+
+  // Count surviving sons
+  const numHeirs = countHeirs(character.family.children);
+
+  // Sonless path
+  if (numHeirs === 0) {
+    const reputation = Math.round(Math.max(character.stats.fortune * 0.3, 0));
+    const effectiveReputation = Math.max(reputation, dynasty.legacy.reputation);
+
+    if (canAdopt(effectiveReputation)) {
+      // Adoption path
+      const i1Input: I1Input = {
+        parent: {
+          name: character.name,
+          traits: character.traits,
+          highest_title: character.titles[character.titles.length - 1] ?? "白身",
+          erudition: character.stats.erudition,
+        },
+        dynasty: {
+          family_name: dynasty.family_name,
+          generation: character.generation + 1,
+          era: world.era,
+        },
+        num_heirs: 1,
+        is_adoption: true,
+      };
+      const result = await generateHeirsAI(i1Input);
+      return {
+        heirs: result.heirs,
+        legacyTokens,
+        blessingPoints,
+        isAdoption: true,
+        gameOver: false,
+        deathReason,
+      };
+    } else {
+      // Game over — family line dies out
+      return {
+        heirs: [],
+        legacyTokens,
+        blessingPoints,
+        isAdoption: false,
+        gameOver: true,
+        deathReason,
+      };
+    }
+  }
+
+  // Normal heir generation
+  const i1Input: I1Input = {
+    parent: {
+      name: character.name,
+      traits: character.traits,
+      highest_title: character.titles[character.titles.length - 1] ?? "白身",
+      erudition: character.stats.erudition,
+    },
+    dynasty: {
+      family_name: dynasty.family_name,
+      generation: character.generation + 1,
+      era: world.era,
+    },
+    num_heirs: numHeirs,
+    is_adoption: false,
+  };
+  const result = await generateHeirsAI(i1Input);
+
+  return {
+    heirs: result.heirs,
+    legacyTokens,
+    blessingPoints,
+    isAdoption: false,
+    gameOver: false,
+    deathReason,
+  };
+}
+
+// ── chooseHeir ──────────────────────────────────────────────────────────────
+
+export interface ChooseHeirResult {
+  state: GameState;
+  eraTransitioned: boolean;
+  oldEra: string;
+  newEra: string | null;
+}
 
 export async function chooseHeir(
-  _heirIndex: number,
-  _blessingIds: string[]
-): Promise<{ error: string }> {
-  return { error: "Not implemented yet — Task 7" };
+  currentState: GameState,
+  heirIndex: number,
+  purchasedBlessingIds: string[]
+): Promise<ChooseHeirResult> {
+  const sessionId = await getSessionId();
+  const rng = createRng(currentState.rng_seed);
+
+  // Use the engine's resolveInheritance which handles:
+  // - Legacy token calculation
+  // - Generation decay
+  // - Blessing bonuses
+  // - Heir starting stats
+  // - Origin options
+  // - Max age roll
+  // - Ancestor archival
+  // - New character creation
+  // - Dynasty update
+  // - Era transition check
+  // - Court whims reset
+  // - Auxiliary tools reset
+  // - Exam schedule reset
+  const result = resolveInheritance(currentState, heirIndex, purchasedBlessingIds, rng);
+
+  // Handle NPC era-change rules
+  if (result.eraTransitioned) {
+    applyNpcEraChange(result.state, rng);
+  }
+
+  // Update RNG seed
+  result.state.rng_seed = rng.nextInt(0, 2147483647);
+
+  // Persist
+  try {
+    await upsertSave(sessionId, result.state);
+  } catch (e) {
+    console.warn("Failed to persist game state:", e);
+  }
+
+  return {
+    state: result.state,
+    eraTransitioned: result.eraTransitioned,
+    oldEra: currentState.world.era,
+    newEra: result.newEra,
+  };
+}
+
+// ── NPC Era-Change Rules ─────────────────────────────────────────────────────
+
+function applyNpcEraChange(
+  state: GameState,
+  rng: { next: () => number }
+): void {
+  for (const npc of state.npcs) {
+    if (!npc.alive) continue;
+
+    switch (npc.role) {
+      case "examiner":
+        // Examiners are all removed (replaced next era)
+        npc.alive = false;
+        break;
+      case "mentor":
+      case "patron":
+        // 50% death chance
+        if (rng.next() < 0.5) {
+          npc.alive = false;
+        }
+        break;
+      case "rival":
+        // Persist but memory reset
+        npc.memory = [];
+        break;
+      case "spouse":
+      case "friend":
+        // Persist
+        break;
+    }
+
+    // All surviving NPCs gain era_change memory
+    if (npc.alive) {
+      if (npc.memory.length >= 10) {
+        npc.memory.shift();
+      }
+      npc.memory.push({ event: "era_change", sentiment: "uncertain", turn: state.turn_number });
+    }
+  }
+
+  // Remove dead NPCs from character relationships
+  const aliveNpcIds = new Set(state.npcs.filter((n) => n.alive).map((n) => n.id));
+  state.character.relationships = state.character.relationships.filter(
+    (r) => aliveNpcIds.has(r.npc_id)
+  );
 }

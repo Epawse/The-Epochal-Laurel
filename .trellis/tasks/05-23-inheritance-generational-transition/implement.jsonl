@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/game-design/ai-contracts.md", "reason": "I1 heir generation contract spec — input/output schemas, model tier, fallback"}
+{"file": ".trellis/spec/game-design/prompt-library.md", "reason": "PT-I1 prompt template for heir generation"}
+{"file": ".trellis/spec/game-design/balance.md", "reason": "Inheritance formulas, era transitions, lineage, fertility"}
+{"file": ".trellis/spec/game-design/data-model.md", "reason": "NPC era-change rules, dynasty schema"}
+{"file": ".trellis/spec/frontend/screen-map.md", "reason": "Inheritance screen layout and EraTransition spec"}
+{"file": ".trellis/spec/frontend/component-catalog.md", "reason": "HeirCard, BlessingCard, EraTransition component specs"}
+{"file": ".trellis/tasks/05-23-inheritance-generational-transition/prd.md", "reason": "Task requirements and acceptance criteria"}

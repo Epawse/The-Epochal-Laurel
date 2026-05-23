@@ -9,7 +9,7 @@
 // (required for DeepSeek's json_object mode).
 
 import type { ChatMessage } from "./providers";
-import type { V1Input, V2Input, N1Input, E1Input, E2Input, R1Input, Era, Season, EventType } from "./schema";
+import type { V1Input, V2Input, N1Input, E1Input, E2Input, R1Input, I1Input, Era, Season, EventType } from "./schema";
 
 const ERA_DESCRIPTION: Record<Era, string> = {
   prosperity: "天下太平，文风鼎盛，朝廷重文轻武，诗赋策论皆为正道",
@@ -332,6 +332,53 @@ hint is null or a string with a subtle hint about court preferences or upcoming 
 relationship_delta is an integer from -5 to 5`;
 
   const user = `请为NPC「${npc.name}」生成一段与「${input.character_name}」${INTERACTION_TYPE_TEXT[input.interaction_type] ?? "交流"}时的对话。`;
+
+  return [
+    { role: "system", content: system },
+    { role: "user", content: user },
+  ];
+}
+
+// ── PT-I1: Heir Generation (v1.0) ────────────────────────────────────────
+
+export function buildI1Messages(input: I1Input): ChatMessage[] {
+  const system = `You are generating heir candidates for a generational Chinese historical simulation. Output strict json only — no commentary.
+
+PARENT INFO:
+- Name: ${input.parent.name}
+- Family name: ${input.dynasty.family_name}
+- Traits: ${input.parent.traits.join("、") || "（无）"}
+- Highest title: ${input.parent.highest_title}
+- Erudition at death: ${input.parent.erudition}
+
+DYNASTY INFO:
+- Generation: ${input.dynasty.generation}
+- Current era: ${input.dynasty.era}（${ERA_DESCRIPTION[input.dynasty.era]}）
+- Adoption case: ${input.is_adoption}
+
+Generate exactly ${input.num_heirs} heir candidate${input.num_heirs > 1 ? "s" : ""}. Each heir should feel distinct and offer a different strategic choice.
+
+RULES:
+1. All heirs share the family surname: ${input.dynasty.family_name}
+2. Each heir has 1-2 traits (mix positive and negative)
+3. At least one heir should have a clear academic strength
+4. At least one heir should have a non-academic advantage (social, lucky, resilient)
+5. Personality hints should be vivid and specific (1 sentence)
+6. Do NOT duplicate the parent's exact trait combination
+7. Names should be era-appropriate and distinct from each other
+8. If is_adoption is true, generate a single adopted heir who does NOT carry the parent's blood traits — use clan/era-appropriate traits, and let the personality hint reflect an adopted outsider
+
+OUTPUT FORMAT (strict JSON):
+{
+  "heirs": [
+    {"name": "全名", "traits": ["trait1", "trait2"], "personality_hint": "一句性格描述", "starting_bonus": {"stat": "erudition|fortune|drive", "value": 5}}
+  ]
+}
+
+starting_bonus.stat must be one of: erudition, fortune, drive
+starting_bonus.value must be an integer between 3 and 8`;
+
+  const user = `请为${input.dynasty.family_name}氏第${input.dynasty.generation}代生成${input.num_heirs}位${input.is_adoption ? "过继" : ""}继承人候选。`;
 
   return [
     { role: "system", content: system },

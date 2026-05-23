@@ -198,3 +198,34 @@ export interface R1Input {
   context: { character_name: string; detail: string };
   tone: "triumphant" | "tragic" | "bittersweet" | "comedic";
 }
+
+// ── I1: Heir Generation ─────────────────────────────────────────────────────
+
+export const I1HeirSchema = z.object({
+  heirs: z.array(z.object({
+    name: z.string(),
+    traits: z.array(z.string()).min(1).max(2),
+    personality_hint: z.string(),
+    starting_bonus: z.object({
+      stat: z.enum(["erudition", "fortune", "drive"]),
+      value: z.number().int().min(3).max(8),
+    }),
+  })),
+});
+export type I1Heirs = z.infer<typeof I1HeirSchema>;
+
+export interface I1Input {
+  parent: {
+    name: string;
+    traits: string[];
+    highest_title: string;
+    erudition: number;
+  };
+  dynasty: {
+    family_name: string;
+    generation: number;
+    era: Era;
+  };
+  num_heirs: number;
+  is_adoption: boolean;
+}

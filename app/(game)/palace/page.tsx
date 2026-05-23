@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { SceneBackground } from "@/components/ui/SceneBackground";
 import { SealStamp } from "@/components/ui/SealStamp";
 import { recordScore, getPlayerSessionId } from "@/lib/actions/leaderboard";
 import { calculateScore } from "@/lib/game/scoring";
-import type { PalaceExamResult } from "@/lib/actions/game";
+import { generateHeirsAction, type PalaceExamResult } from "@/lib/actions/game";
 import type { RankingEntry } from "@/lib/engine/exam";
+import { highestTitleOf } from "@/lib/game/constants";
 import { useSessionJSON } from "@/hooks/useSessionJSON";
 
 const TITLE_COLORS: Record<string, string> = {
@@ -32,6 +33,7 @@ const TIER_LABELS: Record<string, string> = {
 export default function PalacePage() {
   const router = useRouter();
   const result = useSessionJSON<PalaceExamResult>("palace_result");
+  const [isNavigating, startNavigation] = useTransition();
 
   // No palace result → back to the daily loop.
   useEffect(() => {
@@ -219,7 +221,8 @@ export default function PalacePage() {
         >
           <button
             type="button"
-            onClick={async () => {
+            disabled={isNavigating}
+            onClick={() => startNavigation(async () => {
               // Record victory to leaderboard if there's a victory tier
               if (result.victoryTier) {
                 const { dynasty, character } = result.state;
@@ -245,18 +248,52 @@ export default function PalacePage() {
 
               sessionStorage.removeItem("palace_result");
               router.push("/leaderboard");
-            }}
-            className="px-6 py-2.5 border border-hairline bg-paper-2 font-serif text-sm text-bone tracking-[0.12em] hover:border-gold-dim transition-colors"
+            })}
+            className="px-6 py-2.5 border border-hairline bg-paper-2 font-serif text-sm text-bone tracking-[0.12em] hover:border-gold-dim transition-colors disabled:opacity-50 disabled:cursor-wait"
           >
             {"衣锦还乡"}
           </button>
           <button
             type="button"
-            onClick={() => {
+            disabled={isNavigating}
+            onClick={() => startNavigation(async () => {
+              const heirsResult = await generateHeirsAction(result.state, "victory");
+
+              if (heirsResult.gameOver) {
+                const { dynasty, character } = result.state;
+                const highTitle = highestTitleOf(character.titles);
+                const tier = result.victoryTier ?? "F";
+                const score = calculateScore(highTitle, tier, dynasty.total_generations);
+
+                await recordScore(dynasty.family_name, tier, highTitle, dynasty.total_generations, score);
+
+                const sid = await getPlayerSessionId();
+                sessionStorage.setItem("player_session_id", sid);
+                sessionStorage.setItem("dynasty_summary", JSON.stringify({
+                  familyName: dynasty.family_name,
+                  tier,
+                  highestTitle: highTitle,
+                  generations: dynasty.total_generations,
+                  score,
+                }));
+                sessionStorage.removeItem("game_state");
+                sessionStorage.removeItem("palace_result");
+                router.push("/leaderboard");
+                return;
+              }
+
+              sessionStorage.setItem("inheritance_data", JSON.stringify({
+                state: result.state,
+                heirs: heirsResult.heirs,
+                legacyTokens: heirsResult.legacyTokens,
+                blessingPoints: heirsResult.blessingPoints,
+                isAdoption: heirsResult.isAdoption,
+                deathReason: heirsResult.deathReason,
+              }));
               sessionStorage.removeItem("palace_result");
               router.push("/inherit");
-            }}
-            className="px-6 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.22em] transition-all duration-200"
+            })}
+            className="px-6 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.22em] transition-all duration-200 disabled:opacity-50 disabled:cursor-wait"
           >
             {"传之后世"}
           </button>

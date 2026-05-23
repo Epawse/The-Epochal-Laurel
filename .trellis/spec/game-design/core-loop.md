@@ -183,6 +183,13 @@ Triggered when:
 - **Extended play**: After any victory, player can continue for legendary dynasty achievements (连中三元, 父子同榜, etc.)
 - **Failure**: Family line dies out (no surviving sons and no adoption available at inheritance) or 10 generations pass without achieving 举人+
 
+When the player chooses extended play after a palace-exam victory, route through
+the same inheritance handoff as death-triggered transitions using an
+`InheritanceTrigger` of `"victory"`. The handoff must populate
+`inheritance_data` before navigating to `/inherit`; if no heir/adoption is
+available, preserve the already-earned victory tier for leaderboard scoring
+rather than converting the run to an F-tier failure.
+
 ### Victory Tiers (for scoring/leaderboard)
 
 | Tier | Condition | Score Multiplier |

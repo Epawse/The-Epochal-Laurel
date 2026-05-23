@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { advanceTurn } from "../game";
+import { advanceTurn, generateHeirsAction } from "../game";
 import { createCharacter } from "@/lib/engine/reducer";
 import { createRng } from "@/lib/engine/rng";
 
@@ -32,6 +32,20 @@ vi.mock("@/lib/ai/contracts/npcDialogue", () => ({
   })),
 }));
 
+vi.mock("@/lib/ai/contracts/heirs", () => ({
+  generateHeirs: vi.fn(async () => ({
+    heirs: [
+      {
+        name: "陈承志",
+        birth_order: "长子",
+        traits: ["聪敏"],
+        personality_hint: "沉静好学",
+        starting_bonus: { erudition: 5, fortune: 0, drive: 0, wealth: 0 },
+      },
+    ],
+  })),
+}));
+
 describe("game actions", () => {
   it("does not attach a mentor relationship when socialize creates a friend NPC", async () => {
     const state = createCharacter("陈", "farming_family", createRng(42));
@@ -46,5 +60,19 @@ describe("game actions", () => {
     const newFriends = result.state.npcs.filter((npc) => npc.role === "friend");
     expect(newFriends.length).toBe(1);
     expect(result.state.character.relationships).toEqual([]);
+  });
+
+  it("allows palace victory to generate inheritance handoff data", async () => {
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.character.titles = ["贡士", "进士"];
+    state.character.family.children = [
+      { name: "陈承志", born_year: state.world.year - 16, is_son: true, alive: true },
+    ];
+
+    const result = await generateHeirsAction(state, "victory");
+
+    expect(result.gameOver).toBe(false);
+    expect(result.deathReason).toBe("victory");
+    expect(result.heirs[0]?.name).toBe("陈承志");
   });
 });

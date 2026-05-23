@@ -1,0 +1,3 @@
+{"file": ".trellis/workspace/haoran/2026-05-24-roadmap-completeness-analysis.md", "reason": "Verify the documented P0 palace handoff break is resolved"}
+{"file": ".trellis/spec/frontend/screen-map.md", "reason": "Validate route/action behavior stays aligned"}
+{"file": ".trellis/spec/game-design/core-loop.md", "reason": "Validate inheritance trigger semantics"}

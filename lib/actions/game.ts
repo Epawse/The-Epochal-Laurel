@@ -854,12 +854,14 @@ export interface GenerateHeirsResult {
   blessingPoints: number;
   isAdoption: boolean;
   gameOver: boolean;
-  deathReason: "drive_zero" | "max_age";
+  deathReason: InheritanceTrigger;
 }
+
+export type InheritanceTrigger = "drive_zero" | "max_age" | "victory";
 
 export async function generateHeirsAction(
   currentState: GameState,
-  deathReason: "drive_zero" | "max_age"
+  deathReason: InheritanceTrigger
 ): Promise<GenerateHeirsResult> {
   const { character, dynasty, world } = currentState;
 

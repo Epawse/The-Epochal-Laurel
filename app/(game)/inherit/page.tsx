@@ -7,7 +7,7 @@ import type { Era } from "@/lib/game/constants";
 import type { GameState } from "@/lib/game/schema";
 import type { I1Heirs } from "@/lib/ai/schema";
 import type { LegacyTokens } from "@/lib/engine/inheritance";
-import { chooseHeir } from "@/lib/actions/game";
+import { chooseHeir, type InheritanceTrigger } from "@/lib/actions/game";
 import { EraTransition } from "@/components/game/EraTransition";
 import { useSessionJSON } from "@/hooks/useSessionJSON";
 
@@ -19,7 +19,7 @@ interface InheritanceData {
   legacyTokens: LegacyTokens;
   blessingPoints: number;
   isAdoption: boolean;
-  deathReason: "drive_zero" | "max_age";
+  deathReason: InheritanceTrigger;
 }
 
 // ── Helper Functions ─────────────────────────────────────────────────────────
@@ -46,6 +46,12 @@ const BLESSING_EFFECT_LABELS: Record<string, string> = {
   "max_age_+10": "寿元 +10",
   "starting_wealth_+20": "起始财富 +20",
   "earn_wealth_+5": "营生收益 +5",
+};
+
+const INHERITANCE_REASON_LABELS: Record<InheritanceTrigger, string> = {
+  drive_zero: "心力耗尽",
+  max_age: "寿终正寝",
+  victory: "功成身退",
 };
 
 // ── Page Component ───────────────────────────────────────────────────────────
@@ -221,7 +227,7 @@ export default function InheritPage() {
                   CAUSE
                 </span>
                 <span className="font-serif text-base text-bone tracking-[0.06em]">
-                  {deathReason === "drive_zero" ? "心力耗尽" : "寿终正寝"}
+                  {INHERITANCE_REASON_LABELS[deathReason]}
                 </span>
               </div>
               <div>

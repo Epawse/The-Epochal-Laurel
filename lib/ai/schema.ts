@@ -229,3 +229,28 @@ export interface I1Input {
   num_heirs: number;
   is_adoption: boolean;
 }
+
+// ── E3: Palace Exam Rival Generation ────────────────────────────────────────
+
+export const E3RivalsSchema = z.object({
+  rivals: z.array(z.object({
+    name: z.string(),
+    answer_summary: z.string(),
+    score: z.number().int(),
+    style: z.enum(["conservative", "bold", "sycophantic", "scholarly"]),
+  })).length(3),
+});
+export type E3Rivals = z.infer<typeof E3RivalsSchema>;
+
+export type RivalStrength = "weak" | "moderate" | "strong";
+
+export interface E3Input {
+  question_text: string;
+  court_whims: {
+    style: string;
+    emperor_temperament: string;
+  };
+  dynasty_generation: number;
+  era: Era;
+  rival_strength: RivalStrength;
+}

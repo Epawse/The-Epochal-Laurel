@@ -1054,3 +1054,230 @@ function applyNpcEraChange(
     (r) => aliveNpcIds.has(r.npc_id)
   );
 }
+
+// ── submitPalaceExam ────────────────────────────────────────────────────────
+
+import { generatePalaceRivals, getRivalStrength } from "@/lib/ai/contracts/palaceRivals";
+import { palaceRanking, type RankingEntry } from "@/lib/engine/exam";
+import type { E3Input } from "@/lib/ai/schema";
+
+export type VictoryTier = "S" | "A" | "B" | "C" | "D" | "F" | null;
+
+export interface PalaceExamResult {
+  playerScore: number;
+  ranking: RankingEntry[];
+  playerRank: number;
+  playerTitle: string;
+  narration: string;
+  soundCue: string;
+  victoryTier: VictoryTier;
+  state: GameState;
+  judgeNarrative: string | null;
+}
+
+export async function submitPalaceExam(
+  currentState: GameState,
+  question: E1ExamQuestion,
+  choiceId: string | null,
+  freeText: string | null,
+  cheatSheetActive: boolean
+): Promise<PalaceExamResult> {
+  const sessionId = await getSessionId();
+  const { character, world, dynasty } = currentState;
+  const erudition = character.stats.erudition;
+
+  // ── Step 1: Score the player's answer (same as regular exam) ──
+  let playerScore: number;
+  let judgeNarrative: string | null = null;
+
+  if (freeText && freeText.trim().length > 0) {
+    const judgeResult = await evaluateFreeText({
+      question_text: question.question_text,
+      player_answer: freeText,
+      court_whims: {
+        style: world.court_whims.style,
+        emperor_temperament: world.court_whims.emperor_temperament,
+      },
+      exam_level: "palace",
+      character_erudition: erudition,
+      character_items: character.inventory.map((i) => i.name),
+    });
+
+    const eruditionBonus = cheatSheetActive ? erudition * 0.6 : erudition * 0.3;
+    playerScore = Math.round(
+      Math.max(0, Math.min(100, judgeResult.total_score * 0.7 + eruditionBonus))
+    );
+    judgeNarrative = judgeResult.judge_narrative;
+  } else if (choiceId) {
+    const choice = question.choices.find((c) => c.id === choiceId);
+    if (!choice) throw new Error(`Invalid choice ID: ${choiceId}`);
+
+    let courtWhimsBonus = 0;
+    if (choice.alignment === "full") courtWhimsBonus = 20;
+    else if (choice.alignment === "partial") courtWhimsBonus = 10;
+
+    const eruditionBonus = cheatSheetActive ? erudition * 0.6 : erudition * 0.3;
+    playerScore = Math.round(
+      Math.max(0, Math.min(100, choice.base_score + eruditionBonus + courtWhimsBonus))
+    );
+  } else {
+    throw new Error("Must provide either choiceId or freeText");
+  }
+
+  // ── Step 2: Generate 3 AI rivals (E3 does NOT receive player score) ──
+  const rivalStrength = getRivalStrength(dynasty.total_generations);
+  const e3Input: E3Input = {
+    question_text: question.question_text,
+    court_whims: {
+      style: world.court_whims.style,
+      emperor_temperament: world.court_whims.emperor_temperament,
+    },
+    dynasty_generation: dynasty.total_generations,
+    era: world.era,
+    rival_strength: rivalStrength,
+  };
+  const rivalsResult = await generatePalaceRivals(e3Input);
+
+  // ── Step 3: Engine ranks all 4 candidates ──
+  const ranking = palaceRanking(
+    character.name,
+    playerScore,
+    rivalsResult.rivals.map((r) => ({ name: r.name, score: r.score }))
+  );
+
+  const playerEntry = ranking.find((r) => r.name === character.name)!;
+  const playerRank = playerEntry.rank;
+  const playerTitle = playerEntry.title;
+
+  // ── Step 4: Generate narration via R1 (include emperor's 御评) ──
+  const champion = ranking[0];
+  const narrationResult = await generateNarration({
+    event_type: "exam_pass",
+    context: {
+      character_name: character.name,
+      detail: `殿试 palace exam. Player ranked #${playerRank} (${playerTitle}), score ${playerScore}. Champion: ${champion.name} (${champion.title}, score ${champion.score}). Include emperor's 御评 on the champion's answer.`,
+    },
+    tone: playerRank === 1 ? "triumphant" : playerRank <= 3 ? "bittersweet" : "bittersweet",
+  });
+
+  // ── Step 5: Update game state ──
+  const newState = structuredClone(currentState) as GameState;
+
+  // Award title based on rank
+  const titleToAward = playerTitle === "状元" ? "状元" : "进士";
+  if (!newState.character.titles.includes(titleToAward)) {
+    newState.character.titles.push(titleToAward);
+  }
+  // Also ensure 进士 is always awarded (all palace exam participants get at least 进士)
+  if (!newState.character.titles.includes("进士")) {
+    newState.character.titles.push("进士");
+  }
+
+  // Record exam history with ranking info
+  newState.character.exam_history.push({
+    level: "palace",
+    year: world.year,
+    result: "pass",
+    score: playerScore,
+    rank: playerRank,
+    title: playerTitle,
+    rivals: rivalsResult.rivals.map((r) => ({ name: r.name, score: r.score })),
+  });
+
+  // Drive cost for taking exam
+  newState.character.stats = applyStatChanges(newState.character.stats, {
+    erudition: 0,
+    fortune: 0,
+    drive: -5,
+    wealth: 0,
+  });
+
+  // Update dynasty highest title
+  if (playerTitle === "状元") {
+    newState.dynasty.highest_title_ever = "状元";
+  } else if (
+    newState.dynasty.highest_title_ever !== "状元" &&
+    (playerTitle === "探花" || playerTitle === "榜眼" || playerTitle === "进士")
+  ) {
+    const titleRank: Record<string, number> = { 进士: 1, 探花: 2, 榜眼: 3, 状元: 4 };
+    const current = titleRank[newState.dynasty.highest_title_ever] ?? 0;
+    const newTitle = titleRank[playerTitle] ?? 0;
+    if (newTitle > current) {
+      newState.dynasty.highest_title_ever = playerTitle;
+    }
+  }
+
+  // ── Step 6: Evaluate victory condition ──
+  const victoryTier = evaluateVictory(newState);
+
+  // Persist
+  try {
+    await upsertSave(sessionId, newState);
+  } catch (e) {
+    console.warn("Failed to persist game state:", e);
+  }
+
+  return {
+    playerScore,
+    ranking,
+    playerRank,
+    playerTitle,
+    narration: narrationResult.narration,
+    soundCue: narrationResult.sound_cue,
+    victoryTier,
+    state: newState,
+    judgeNarrative,
+  };
+}
+
+// ── evaluateVictory ─────────────────────────────────────────────────────────
+
+/**
+ * Evaluate the dynasty's victory tier based on achievements across all generations.
+ * Returns null if the game is still in progress (no victory/defeat condition met).
+ *
+ * Victory tiers (core-loop.md):
+ * - S: 状元 in <= 3 generations
+ * - A: 状元 in any generation
+ * - B: 进士 in <= 3 generations
+ * - C: 进士 in any generation
+ * - D: 举人 but never 进士 (10 gen limit reached)
+ * - F: Family line dies out
+ */
+function evaluateVictory(state: GameState): VictoryTier {
+  const { dynasty, character } = state;
+  const totalGenerations = dynasty.total_generations;
+
+  // Check current character's titles + all ancestors
+  const allTitles: string[] = [...character.titles];
+  for (const ancestor of dynasty.ancestors) {
+    if (ancestor.highest_title) {
+      allTitles.push(ancestor.highest_title);
+    }
+  }
+
+  const hasZhuangyuan = allTitles.includes("状元");
+  const hasJinshi = allTitles.includes("进士") || hasZhuangyuan;
+  const hasJuren = allTitles.includes("举人") || allTitles.includes("贡士") || hasJinshi;
+
+  // S: 状元 in <= 3 generations
+  if (hasZhuangyuan && totalGenerations <= 3) return "S";
+
+  // A: 状元 in any generation
+  if (hasZhuangyuan) return "A";
+
+  // B: 进士 in <= 3 generations
+  if (hasJinshi && totalGenerations <= 3) return "B";
+
+  // C: 进士 in any generation
+  if (hasJinshi) return "C";
+
+  // D: 举人 but never 进士 (only if 10 gen limit reached)
+  if (hasJuren && totalGenerations >= 10) return "D";
+
+  // F: Family line dies out (checked externally when heirs = 0)
+  // This is evaluated in generateHeirsAction when gameOver = true
+
+  // Game still in progress
+  return null;
+}

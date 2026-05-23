@@ -9,7 +9,7 @@
 // (required for DeepSeek's json_object mode).
 
 import type { ChatMessage } from "./providers";
-import type { V1Input, V2Input, N1Input, E1Input, E2Input, R1Input, I1Input, Era, Season, EventType } from "./schema";
+import type { V1Input, V2Input, N1Input, E1Input, E2Input, R1Input, I1Input, E3Input, Era, Season, EventType } from "./schema";
 
 const ERA_DESCRIPTION: Record<Era, string> = {
   prosperity: "天下太平，文风鼎盛，朝廷重文轻武，诗赋策论皆为正道",
@@ -379,6 +379,50 @@ starting_bonus.stat must be one of: erudition, fortune, drive
 starting_bonus.value must be an integer between 3 and 8`;
 
   const user = `请为${input.dynasty.family_name}氏第${input.dynasty.generation}代生成${input.num_heirs}位${input.is_adoption ? "过继" : ""}继承人候选。`;
+
+  return [
+    { role: "system", content: system },
+    { role: "user", content: user },
+  ];
+}
+
+// ── PT-E3: Palace Exam Rival Answers (v1.0) ─────────────────────────────
+
+export function buildE3Messages(input: E3Input): ChatMessage[] {
+  const system = `You are simulating the rival candidates in a Chinese imperial Palace Examination (殿试). Output strict json only — no commentary.
+
+EXAM CONTEXT:
+- Question: ${input.question_text}
+- Era: ${input.era}（${ERA_DESCRIPTION[input.era]}）
+- Court style preference: ${input.court_whims.style}
+- Emperor temperament: ${input.court_whims.emperor_temperament}
+- Rival strength level: ${input.rival_strength}
+
+TASK:
+1. Generate exactly 3 rival candidates with distinct answering styles
+2. Each rival writes a brief answer summary (1 sentence describing their approach)
+3. Assign each rival a score based on rival_strength:
+   - weak: scores range 40-65
+   - moderate: scores range 55-80
+   - strong: scores range 70-95
+
+RULES:
+- Rival names must be era-appropriate Chinese full names (surname + given name)
+- Each rival must have a distinct style: conservative, bold, sycophantic, or scholarly
+- Score each rival on their own merits — you are NOT given the player's score, and must NOT try to guess or target it
+- Scores must be integers
+- Do NOT rank candidates or assign titles — the game engine merges these rivals with the player's score and ranks all four
+
+OUTPUT FORMAT (strict JSON):
+{
+  "rivals": [
+    {"name": "全名", "answer_summary": "一句话描述其答题思路", "score": 72, "style": "conservative|bold|sycophantic|scholarly"},
+    {"name": "...", "answer_summary": "...", "score": 68, "style": "..."},
+    {"name": "...", "answer_summary": "...", "score": 60, "style": "..."}
+  ]
+}`;
+
+  const user = `请为本次殿试生成3位竞争对手。对手强度：${input.rival_strength}。`;
 
   return [
     { role: "system", content: system },

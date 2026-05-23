@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ScrollFramePanel } from "@/components/ui/ScrollFramePanel";
 import { ExamChoice } from "@/components/game/ExamChoice";
 import { ResultOverlay } from "@/components/game/ResultOverlay";
-import { getExamQuestion, submitExamAnswer, useToolAction } from "@/lib/actions/game";
+import { getExamQuestion, submitExamAnswer, submitPalaceExam, useToolAction } from "@/lib/actions/game";
 import type { GameState } from "@/lib/game/schema";
 import type { ExamLevel } from "@/lib/game/constants";
 import type { E1ExamQuestion } from "@/lib/ai/schema";
@@ -66,18 +66,34 @@ export default function ExamPage() {
     if (!selectedChoice && !freeText.trim()) return;
 
     startSubmit(async () => {
-      const result = await submitExamAnswer(
-        gameState,
-        examLevel,
-        question,
-        freeText.trim() ? null : selectedChoice,
-        freeText.trim() || null,
-        cheatSheetActive
-      );
-      setExamResult(result);
-      setGameState(result.state);
-      // Persist updated state
-      sessionStorage.setItem("game_state", JSON.stringify(result.state));
+      if (examLevel === "palace") {
+        // Palace exam: call submitPalaceExam and navigate to /palace
+        const palaceResult = await submitPalaceExam(
+          gameState,
+          question,
+          freeText.trim() ? null : selectedChoice,
+          freeText.trim() || null,
+          cheatSheetActive
+        );
+        // Store palace result for the palace ranking page
+        sessionStorage.setItem("palace_result", JSON.stringify(palaceResult));
+        sessionStorage.setItem("game_state", JSON.stringify(palaceResult.state));
+        router.push("/palace");
+      } else {
+        // Regular exam: show ResultOverlay
+        const result = await submitExamAnswer(
+          gameState,
+          examLevel,
+          question,
+          freeText.trim() ? null : selectedChoice,
+          freeText.trim() || null,
+          cheatSheetActive
+        );
+        setExamResult(result);
+        setGameState(result.state);
+        // Persist updated state
+        sessionStorage.setItem("game_state", JSON.stringify(result.state));
+      }
     });
   }
 
@@ -231,7 +247,8 @@ export default function ExamPage() {
             />
           </div>
 
-          {/* Tools section */}
+          {/* Tools section — NOT available in palace exam (殿试) */}
+          {examLevel !== "palace" && (
           <div className="flex items-center gap-3 mb-4">
             <button
               type="button"
@@ -250,6 +267,7 @@ export default function ExamPage() {
               榜眼引路 (银-15)
             </button>
           </div>
+          )}
 
           {/* Tool message */}
           {toolMessage && (

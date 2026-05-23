@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
+- **Total Sessions**: 10
 - **Last Active**: 2026-05-24
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~304 | Active |
+| `journal-1.md` | ~337 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-05-24 | Task 9: Leaderboard + Save System Polish | `b18f650` | `main` |
 | 9 | 2026-05-24 | Task 8: Palace Exam + Palace Ranking | `b008528` | `main` |
 | 8 | 2026-05-23 | Task 7: Inheritance + Generational Transition | `3e9f657` | `main` |
 | 7 | 2026-05-23 | Tasks 5 & 6: Exam Flow + Random Events + NPC | `14c45d8` | `main` |

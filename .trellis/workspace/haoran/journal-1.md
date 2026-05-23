@@ -302,3 +302,36 @@ Implemented E3 palace rivals AI contract, palace ranking page with stagger-anima
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Task 9: Leaderboard + Save System Polish
+
+**Date**: 2026-05-24
+**Task**: Task 9: Leaderboard + Save System Polish
+**Branch**: `main`
+
+### Summary
+
+Implemented leaderboard page with dynasty summary card and 12-row table, save system polish with continue button, game over score recording, and score calculation formula.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b18f650` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

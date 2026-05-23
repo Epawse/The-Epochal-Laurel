@@ -1,0 +1,7 @@
+{"path": ".trellis/tasks/05-23-fix-spec-issues-score-clamp-risk-mechanics-session-management-era-transition/prd.md", "reason": "Acceptance criteria to verify"}
+{"path": ".trellis/spec/game-design/balance.md", "reason": "Verify score clamp, risk mechanics, era transition are consistent"}
+{"path": ".trellis/spec/game-design/core-loop.md", "reason": "Verify era transition cross-references"}
+{"path": ".trellis/spec/game-design/data-model.md", "reason": "Verify new dynasty field added correctly"}
+{"path": ".trellis/spec/game-design/ai-contracts.md", "reason": "Verify E1 risk schema update"}
+{"path": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify session management section"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Verify responsive design note"}

@@ -1,0 +1,8 @@
+{"path": ".trellis/tasks/05-23-fix-spec-issues-score-clamp-risk-mechanics-session-management-era-transition/prd.md", "reason": "Task requirements and decisions"}
+{"path": ".trellis/spec/game-design/balance.md", "reason": "Primary target: score clamp, risk mechanics, era transition formulas"}
+{"path": ".trellis/spec/game-design/core-loop.md", "reason": "Era transition references, exam flow context"}
+{"path": ".trellis/spec/game-design/data-model.md", "reason": "Add last_era_change_generation field to dynasty state"}
+{"path": ".trellis/spec/game-design/ai-contracts.md", "reason": "Update E1 risk field output schema"}
+{"path": ".trellis/spec/backend/database-guidelines.md", "reason": "Add session management section"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Add responsive design note"}
+{"path": ".trellis/spec/backend/error-handling.md", "reason": "Fix 'haiku' tier name (opportunistic)"}

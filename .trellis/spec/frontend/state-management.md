@@ -1,51 +1,40 @@
 # State Management
 
-> How state is managed in this project.
-
 ---
 
-## Overview
+## The split
 
-<!--
-Document your project's state management conventions here.
+| State | Where | Example |
+|-------|-------|---------|
+| **Authoritative game state** | Server (Supabase), returned per action | `GameState` |
+| **Transient UI state** | Zustand `useUiStore` (client) | active modal, which moment is animating, free-text draft |
+| **URL state** | route params | current screen, save slot |
 
-Questions to answer:
-- What state management solution do you use?
-- How is local vs global state decided?
-- How do you handle server state?
-- What are the patterns for derived state?
--->
+The client **never** holds a second copy of game logic. After each Server Action, **replace** the local `GameState` snapshot with the server's response — don't merge or patch it client-side (that would let the client diverge from the engine).
 
-(To be filled by the team)
+## Zustand scope
 
----
+`useUiStore` holds only ephemeral UI:
 
-## State Categories
+```ts
+import { create } from "zustand";
 
-<!-- Local state, global state, server state, URL state -->
+export const useUiStore = create<UiState>((set) => ({
+  activeMoment: null,                 // "capture" | "fail" | "inheritance" | null
+  examDraft: "",
+  setMoment: (m) => set({ activeMoment: m }),
+  setExamDraft: (t) => set({ examDraft: t }),
+}));
+```
 
-(To be filled by the team)
+Nothing in here should be derivable from `GameState` — derive those at render time.
 
----
+## Derived values
 
-## When to Use Global State
+Compute display-only derivations (e.g. "drive bar %", "seasons until next exam") in the component or a selector, from the server `GameState`. Never persist derived values.
 
-<!-- Criteria for promoting state to global -->
+## Common mistakes
 
-(To be filled by the team)
-
----
-
-## Server State
-
-<!-- How server data is cached and synchronized -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- State management mistakes your team has made -->
-
-(To be filled by the team)
+- ❌ Mirroring `GameState` into Zustand and editing it locally.
+- ❌ Storing the exam score in client state before the server returns it.
+- ❌ A global store for state that a single component owns.

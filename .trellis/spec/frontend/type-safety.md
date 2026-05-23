@@ -1,51 +1,38 @@
 # Type Safety
 
-> Type safety patterns in this project.
+> TypeScript `strict`. One schema, shared across the wire.
 
 ---
 
-## Overview
+## Single source of types
 
-<!--
-Document your project's type safety conventions here.
+`lib/game/schema.ts` defines Zod schemas and exports inferred types; **both** server and client import from it:
 
-Questions to answer:
-- What type system do you use?
-- How are types organized?
-- What validation library do you use?
-- How do you handle type inference?
--->
+```ts
+export const Character = z.object({ /* ... data-model.md ... */ });
+export type Character = z.infer<typeof Character>;
+```
 
-(To be filled by the team)
+No component, hook, or action re-declares `GameState` / `Character` / etc.
 
----
+## Validate at the client boundary too
 
-## Type Organization
+Server-Action responses are already typed. But if you read external/streamed JSON (e.g. streaming narration from `app/api/ai/stream`), `Zod.parse` it before use — the same discipline the backend applies to LLM output.
 
-<!-- Where types are defined, shared types vs local types -->
+## Patterns
 
-(To be filled by the team)
+- Model screen phases as discriminated unions, not boolean soup:
+  ```ts
+  type ExamView =
+    | { phase: "question"; q: ExamQuestion }
+    | { phase: "judging" }
+    | { phase: "result"; result: ExamResult };
+  ```
+- Use the schema enums (`Era`, `ExamLevel`, `VictoryTier`) — never bare string literals for domain values.
 
----
+## Forbidden
 
-## Validation
-
-<!-- Runtime validation patterns (Zod, Yup, io-ts, etc.) -->
-
-(To be filled by the team)
-
----
-
-## Common Patterns
-
-<!-- Type utilities, generics, type guards -->
-
-(To be filled by the team)
-
----
-
-## Forbidden Patterns
-
-<!-- any, type assertions, etc. -->
-
-(To be filled by the team)
+- ❌ `any` (use `unknown` + parse).
+- ❌ `as` casts on server/LLM data.
+- ❌ non-null `!` on possibly-absent fields.
+- ❌ `@ts-ignore` (use `@ts-expect-error` with a reason only if truly unavoidable).

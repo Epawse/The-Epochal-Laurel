@@ -1,54 +1,39 @@
-# Directory Structure
-
-> How frontend code is organized in this project.
+# Frontend Directory Structure
 
 ---
 
-## Overview
-
-<!--
-Document your project's frontend directory structure here.
-
-Questions to answer:
-- Where do components live?
-- How are features/modules organized?
-- Where are shared utilities?
-- How are assets organized?
--->
-
-(To be filled by the team)
-
----
-
-## Directory Layout
+## Layout
 
 ```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
+app/                         # App Router (routes + layouts)
+├── layout.tsx               # root: fonts, Tailwind, providers
+├── page.tsx                 # landing / new-game
+├── (game)/
+│   ├── play/page.tsx        # daily-loop screen (season actions)
+│   ├── exam/page.tsx        # examination screen
+│   └── inheritance/page.tsx # heir selection
+└── leaderboard/page.tsx
+
+components/
+├── ui/                      # presentational primitives — Button, Card, StatBar, Dialog
+└── game/                    # domain components — bound to GameState shapes
+    ├── SeasonActions.tsx
+    ├── EventCard.tsx
+    ├── ExamScreen.tsx
+    ├── PalaceRanking.tsx
+    ├── FamilyTree.tsx
+    └── moments/             # the cinematic moments (core-loop.md)
+        ├── CaptureBanner.tsx    # 中举 报喜 (P0)
+        ├── FailRain.tsx         # 落第 (P0)
+        └── InheritanceFade.tsx  # 传承 (P0)
+
+hooks/                       # useGameState, useAdvanceTurn, useReducedMotion
+stores/                      # useUiStore.ts (Zustand) — transient UI only
 ```
 
----
+## Rules
 
-## Module Organization
-
-<!-- How should new features be organized? -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- File and folder naming rules -->
-
-(To be filled by the team)
-
----
-
-## Examples
-
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+- **`components/game/` may import domain types** from `lib/game/schema.ts`; **`components/ui/` may not** — primitives stay generic and reusable.
+- One component per file, `PascalCase.tsx`. Co-locate a `*.test.tsx` next to non-trivial components.
+- The "Key Visual/Animation Moments" table in core-loop.md maps 1:1 to `components/game/moments/` — each P0/P1 moment is its own component so it can be tuned or disabled independently.
+- Route segments are `kebab-case`; component/hook/store files are `camelCase`/`PascalCase`.

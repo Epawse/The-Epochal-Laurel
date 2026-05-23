@@ -14,7 +14,7 @@ Prompts are versioned. When modifying a prompt, increment the version and note w
 
 **Version**: 1.0  
 **Used by**: AI Contract E1  
-**Model**: Sonnet  
+**Model Tier**: Mid (default: `deepseek-v4-pro`)  
 **Temperature**: 0.7
 
 ### System Prompt
@@ -44,12 +44,18 @@ OUTPUT FORMAT (strict JSON):
   "topic_category": "governance|ethics|military|economics|philosophy",
   "difficulty_hint": "...",
   "choices": [
-    {"id": "a", "label": "...", "alignment": "full|partial|none", "base_score": 40-70, "risk": null|"string"},
-    {"id": "b", "label": "...", "alignment": "...", "base_score": 40-70, "risk": null|"string"},
-    {"id": "c", "label": "...", "alignment": "...", "base_score": 40-70, "risk": null|"string"}
+    {"id": "a", "label": "...", "alignment": "full|partial|none", "base_score": 40-70, "risk": null},
+    {"id": "b", "label": "...", "alignment": "...", "base_score": 40-70, "risk": {"condition": "temperament_mismatch|style_mismatch|full_mismatch", "description": "≤30字风险提示", "penalty": {"drive": -15 to 0, "fortune": -10 to 0}}},
+    {"id": "c", "label": "...", "alignment": "...", "base_score": 40-70, "risk": ...}
   ],
   "free_input_hint": "..."
 }
+
+RISK RULES:
+- At least one choice MUST have risk: null (a safe option always exists)
+- Higher base_score choices should carry risk; safe choices have lower base_score
+- condition types: "temperament_mismatch" (triggers if emperor temperament doesn't match), "style_mismatch" (court style doesn't match), "full_mismatch" (neither matches)
+- The engine evaluates risk conditions deterministically — do NOT make risk probabilistic
 ```
 
 ### Example Output
@@ -60,9 +66,9 @@ OUTPUT FORMAT (strict JSON):
   "topic_category": "economics",
   "difficulty_hint": "Emperor is ambitious and dislikes merchants — pandering scores high but is risky if player lacks alignment info",
   "choices": [
-    {"id": "a", "label": "力陈重税商贾以充军资，迎合圣意", "alignment": "full", "base_score": 65, "risk": "may be seen as sycophantic if erudition < 40"},
+    {"id": "a", "label": "力陈重税商贾以充军资，迎合圣意", "alignment": "full", "base_score": 65, "risk": {"condition": "style_mismatch", "description": "谄媚之嫌，若文风不合恐遭鄙", "penalty": {"drive": -5, "fortune": -10}}},
     {"id": "b", "label": "引经据典，主张以仁治天下、轻徭薄赋", "alignment": "none", "base_score": 45, "risk": null},
-    {"id": "c", "label": "提出开放边贸、以商养兵的折中之策", "alignment": "partial", "base_score": 55, "risk": "radical idea may offend orthodox examiners"}
+    {"id": "c", "label": "提出开放边贸、以商养兵的折中之策", "alignment": "partial", "base_score": 55, "risk": {"condition": "temperament_mismatch", "description": "激进之策恐忤逆圣意", "penalty": {"drive": -10, "fortune": -5}}}
   ],
   "free_input_hint": "考生若能结合时事提出具体可行之策，或巧妙引用考官近作，可获额外加分"
 }
@@ -74,7 +80,7 @@ OUTPUT FORMAT (strict JSON):
 
 **Version**: 1.0  
 **Used by**: AI Contract E2  
-**Model**: Sonnet (prefer Opus for palace exam)  
+**Model Tier**: High (thinking enabled; default: `deepseek-v4-pro` with thinking mode)  
 **Temperature**: 0.3
 
 ### System Prompt
@@ -126,7 +132,7 @@ OUTPUT FORMAT (strict JSON, no other text):
 
 **Version**: 1.0  
 **Used by**: AI Contract V1  
-**Model**: Haiku  
+**Model Tier**: Low (default: `deepseek-v4-flash`)  
 **Temperature**: 0.8
 
 ### System Prompt
@@ -198,7 +204,7 @@ OUTPUT FORMAT (strict JSON):
 
 **Version**: 1.0  
 **Used by**: AI Contract V2  
-**Model**: Sonnet  
+**Model Tier**: Mid (default: `deepseek-v4-pro`)  
 **Temperature**: 0.5
 
 ### System Prompt
@@ -240,7 +246,7 @@ OUTPUT FORMAT (strict JSON):
 
 **Version**: 1.0  
 **Used by**: AI Contract N1  
-**Model**: Haiku  
+**Model Tier**: Low (default: `deepseek-v4-flash`)  
 **Temperature**: 0.7
 
 ### System Prompt
@@ -282,7 +288,7 @@ OUTPUT FORMAT (strict JSON):
 
 **Version**: 1.0  
 **Used by**: AI Contract R1  
-**Model**: Haiku  
+**Model Tier**: Low (default: `deepseek-v4-flash`)  
 **Temperature**: 0.9
 
 ### System Prompt
@@ -301,6 +307,7 @@ RULES:
 4. For exam_pass: include traditional celebration imagery (报喜、锣鼓、红榜)
 5. For death/inheritance: reference the continuity of the family line
 6. For era_change: convey the weight of historical transition
+7. For a palace exam result (殿试): include the emperor's one-line 御评 on the champion's answer
 
 OUTPUT FORMAT (strict JSON):
 {
@@ -333,7 +340,7 @@ OUTPUT FORMAT (strict JSON):
 
 **Version**: 1.0  
 **Used by**: AI Contract I1  
-**Model**: Sonnet  
+**Model Tier**: Mid (default: `deepseek-v4-pro`)  
 **Temperature**: 0.8
 
 ### System Prompt
@@ -351,6 +358,7 @@ PARENT INFO:
 DYNASTY INFO:
 - Generation: {{dynasty.generation}}
 - Current era: {{dynasty.era}}
+- Adoption case: {{is_adoption}}
 
 Generate exactly {{num_heirs}} heir candidates. Each heir should feel distinct and offer a different strategic choice.
 
@@ -362,6 +370,7 @@ RULES:
 5. Personality hints should be vivid and specific (1 sentence)
 6. Do NOT duplicate the parent's exact trait combination
 7. Names should be era-appropriate and distinct from each other
+8. If is_adoption is true, generate a single adopted heir who does NOT carry the parent's blood traits — use clan/era-appropriate traits, and let the personality hint reflect an adopted outsider
 
 OUTPUT FORMAT (strict JSON):
 {
@@ -377,13 +386,13 @@ OUTPUT FORMAT (strict JSON):
 
 **Version**: 1.0  
 **Used by**: AI Contract E3  
-**Model**: Sonnet/Opus  
+**Model Tier**: High (default: `deepseek-v4-pro`, non-thinking)  
 **Temperature**: 0.5
 
 ### System Prompt
 
 ```
-You are simulating a Chinese imperial Palace Examination (殿试) with multiple candidates competing for top ranks.
+You are simulating the rival candidates in a Chinese imperial Palace Examination (殿试).
 
 EXAM CONTEXT:
 - Question: {{question_text}}
@@ -392,9 +401,6 @@ EXAM CONTEXT:
 - Emperor temperament: {{court_whims.emperor_temperament}}
 - Rival strength level: {{rival_strength}}
 
-PLAYER'S ANSWER (already submitted, score: {{player_score}}/100):
-{{player_answer_summary}}
-
 TASK:
 1. Generate exactly 3 rival candidates with distinct answering styles
 2. Each rival writes a brief answer summary (1 sentence describing their approach)
@@ -402,15 +408,13 @@ TASK:
    - weak: scores range 40-65
    - moderate: scores range 55-80
    - strong: scores range 70-95
-4. Rank ALL 4 candidates (player + 3 rivals) strictly by score, highest first
-5. Assign titles: rank 1 = 状元, rank 2 = 榜眼, rank 3 = 探花, rank 4 = 进士
 
 RULES:
 - Rival names must be era-appropriate Chinese full names (surname + given name)
 - Each rival must have a distinct style: conservative, bold, sycophantic, or scholarly
-- The emperor's comment should reflect the winning answer's quality (1 sentence, under 50 chars)
-- Do NOT artificially favor or disfavor the player — rank purely by score
+- Score each rival on their own merits — you are NOT given the player's score, and must NOT try to guess or target it
 - Scores must be integers
+- Do NOT rank candidates or assign titles — the game engine merges these rivals with the player's score and ranks all four
 
 OUTPUT FORMAT (strict JSON):
 {
@@ -418,18 +422,11 @@ OUTPUT FORMAT (strict JSON):
     {"name": "全名", "answer_summary": "一句话描述其答题思路", "score": N, "style": "conservative|bold|sycophantic|scholarly"},
     {"name": "...", "answer_summary": "...", "score": N, "style": "..."},
     {"name": "...", "answer_summary": "...", "score": N, "style": "..."}
-  ],
-  "final_ranking": [
-    {"rank": 1, "name": "...", "title": "状元", "is_player": bool},
-    {"rank": 2, "name": "...", "title": "榜眼", "is_player": bool},
-    {"rank": 3, "name": "...", "title": "探花", "is_player": bool},
-    {"rank": 4, "name": "...", "title": "进士", "is_player": bool}
-  ],
-  "emperor_comment": "≤50字御评"
+  ]
 }
 ```
 
-### Example Output (moderate rivals, player scores 75)
+### Example Output (moderate rivals)
 
 ```json
 {
@@ -437,16 +434,11 @@ OUTPUT FORMAT (strict JSON):
     {"name": "赵文渊", "answer_summary": "引经据典，以周礼为据主张恢复井田制", "score": 72, "style": "conservative"},
     {"name": "钱伯谦", "answer_summary": "大胆提出废除科举、改行荐举制", "score": 68, "style": "bold"},
     {"name": "孙怀德", "answer_summary": "极力颂扬圣上英明，主张一切听从天子裁决", "score": 60, "style": "sycophantic"}
-  ],
-  "final_ranking": [
-    {"rank": 1, "name": "玩家角色", "title": "状元", "is_player": true},
-    {"rank": 2, "name": "赵文渊", "title": "榜眼", "is_player": false},
-    {"rank": 3, "name": "钱伯谦", "title": "探花", "is_player": false},
-    {"rank": 4, "name": "孙怀德", "title": "进士", "is_player": false}
-  ],
-  "emperor_comment": "此子胸有丘壑，堪当大任"
+  ]
 }
 ```
+
+The engine appends the player's score (say 75) to these three (72, 68, 60), sorts → [75, 72, 68, 60], and assigns 状元/榜眼/探花/进士 to ranks 1–4. The emperor's 御评 is then produced by R1.
 
 ---
 

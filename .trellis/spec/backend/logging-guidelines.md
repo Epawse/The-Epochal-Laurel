@@ -1,51 +1,45 @@
 # Logging Guidelines
 
-> How logging is done in this project.
+> Structured JSON via `lib/log.ts`. The most valuable logs here are **AI-call telemetry** and **reproducibility keys**.
 
 ---
 
-## Overview
+## Format
 
-<!--
-Document your project's logging conventions here.
+One JSON object per line: `{ ts, level, event, ...fields }`. `event` is a dotted name (`ai.call`, `ai.fallback`, `turn.advance`, `db.save`).
 
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
+## Levels
 
-(To be filled by the team)
+| Level | Use for |
+|-------|---------|
+| `debug` | full prompts/outputs (dev only, redacted in prod) |
+| `info` | turn advance, exam result, AI-call summary, save written |
+| `warn` | AI fallback taken, slow call (over latency budget), recoverable validation miss |
+| `error` | engine invariant violation, DB failure, unhandled action error |
 
----
+## Always log every AI call
 
-## Log Levels
+The spec defines per-contract latency budgets and fallbacks — you can only tune them if you measure them:
 
-<!-- When to use each level: debug, info, warn, error -->
+```ts
+log.info("ai.call", {
+  contract: "E2",
+  model: "deepseek-v4-flash",
+  latencyMs,
+  fallbackUsed: false,
+  inputTokens,
+  outputTokens,
+});
+```
 
-(To be filled by the team)
+Watch `fallbackUsed` rate per contract (target: low) and `latencyMs` against the budgets in ai-contracts.md (E1 3s, E2/E3 5s, V1/N1/R1 1.5s).
 
----
+## Reproducibility
 
-## Structured Logging
+Log `turn_number` and `rng_seed` on `turn.advance`. A bug report plus the seed must let you replay the exact run — the engine is deterministic on the seed.
 
-<!-- Log format, required fields -->
+## What NOT to log
 
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+- ❌ `ANTHROPIC_API_KEY` or any secret.
+- ❌ Full prompts/outputs at `info`/`warn` (large, and may contain the whole game state) — `debug` only.
+- The game has no real PII; don't introduce any.

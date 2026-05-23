@@ -35,7 +35,8 @@ The game engine maintains a single JSON object as the source of truth. AI genera
 
     "titles": [],
     "exam_history": [
-      { "level": "county", "year": 1042, "result": "fail", "score": 35 }
+      { "level": "county", "year": 1042, "result": "fail", "score": 35 },
+      { "level": "palace", "year": 1050, "result": "pass", "score": 88, "rank": 1, "title": "状元", "rivals": [{ "name": "赵文渊", "score": 72 }, { "name": "钱伯谦", "score": 68 }] }
     ],
 
     "relationships": [
@@ -49,7 +50,14 @@ The game engine maintains a single JSON object as the source of truth. AI genera
     "traits": ["勤勉", "体弱"],
     "status_effects": [
       { "type": "mourning", "turns_remaining": 12 }
-    ]
+    ],
+
+    "family": {
+      "spouse": { "npc_id": "uuid", "married_year": 1045, "fertile_until_year": 1062 },
+      "children": [
+        { "name": "陈伯川", "born_year": 1046, "is_son": true, "alive": true }
+      ]
+    }
   }
 }
 ```
@@ -62,6 +70,12 @@ The game engine maintains a single JSON object as the source of truth. AI genera
 | Fortune | -50 | 100 | Negative = actively cursed (bad events guaranteed) |
 | Drive | 0 | 100 | Triggers inheritance (generation ends) |
 | Wealth | 0 | 200 | Cannot afford exam travel or bribes |
+
+### Lifespan & Family Fields
+
+- `max_age` is rolled at character creation (formula in balance.md > Lifespan). Reaching it triggers natural death and ends the generation (core-loop.md > Inheritance triggers).
+- `family.spouse` is `null` until the one-time `Marry` action; `family.children` accumulates sons born during the fertility window. Only `is_son: true` children that are `alive` become heir candidates at inheritance. Birth / survival / heir-count rules live in balance.md > Fertility & Lineage.
+- `exam_history` entries for `level: "palace"` additionally carry the engine-computed `rank` (1–4), `title` (状元/榜眼/探花/进士), and a `rivals` score snapshot.
 
 ---
 
@@ -107,11 +121,17 @@ The game engine maintains a single JSON object as the source of truth. AI genera
 
 ### Era Transitions
 
-Eras shift every 2-3 generations (or triggered by specific events). When era changes:
-- `court_whims` rerolls completely
+Era transitions are evaluated deterministically by the engine during inheritance (see balance.md > Era Transition Rules). The `dynasty.last_era_change_generation` field tracks when the last transition occurred; the engine uses seeded RNG to decide timing (forced at 3+ generations, 50% chance at exactly 2) and next era (constrained Markov chain: prosperity→decline/invasion, decline→invasion/restoration, invasion→restoration, restoration→prosperity).
+
+When era changes:
+- `world.era` updates to the new era
+- `court_whims` rerolls completely (style + emperor_temperament)
+- `court_whims_revealed` resets to all-hidden
+- `dynasty.last_era_change_generation` updates to current generation
 - New event pools become available
-- Exam difficulty curve adjusts
+- Exam difficulty curve adjusts (era_modifier in balance.md)
 - AI prompt templates switch to era-appropriate tone
+- NPC era-change rules apply (see NPC Handling on Era Change below)
 
 ---
 
@@ -123,6 +143,7 @@ Eras shift every 2-3 generations (or triggered by specific events). When era cha
     "family_name": "string",
     "total_generations": 3,
     "highest_title_ever": "举人",
+    "last_era_change_generation": 0,
 
     "legacy": {
       "books": 45,

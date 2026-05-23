@@ -11,6 +11,8 @@ import { EventModal } from "@/components/game/EventModal";
 import { ACTIONS } from "@/lib/game/constants";
 import type { GameState, StatChanges } from "@/lib/game/schema";
 import { advanceTurn, submitEventChoice, submitEventFreeInput, useToolAction, generateHeirsAction } from "@/lib/actions/game";
+import { recordScore, getPlayerSessionId } from "@/lib/actions/leaderboard";
+import { calculateScore } from "@/lib/game/scoring";
 
 const ACTION_ICONS: Record<string, string> = {
   study: "/assets/action-study.png",
@@ -146,10 +148,30 @@ export default function PlayPage() {
 
           if (heirsResult.gameOver) {
             // Family line dies out — game over (F tier)
-            sessionStorage.setItem("game_over", JSON.stringify({
-              state: result.state,
-              reason: "family_extinct",
+            const { dynasty: dyn, character: char } = result.state;
+            const highTitle = getHighestTitle(char.titles);
+            const tier = "F";
+            const score = calculateScore(highTitle, tier, dyn.total_generations);
+
+            // Record to leaderboard
+            await recordScore(dyn.family_name, tier, highTitle, dyn.total_generations, score);
+
+            // Get session ID for player highlighting
+            const sid = await getPlayerSessionId();
+            sessionStorage.setItem("player_session_id", sid);
+
+            // Set dynasty summary for leaderboard display
+            sessionStorage.setItem("dynasty_summary", JSON.stringify({
+              familyName: dyn.family_name,
+              tier,
+              highestTitle: highTitle,
+              generations: dyn.total_generations,
+              score,
             }));
+
+            // Clear the game save
+            sessionStorage.removeItem("game_state");
+
             router.push("/leaderboard");
             return;
           }

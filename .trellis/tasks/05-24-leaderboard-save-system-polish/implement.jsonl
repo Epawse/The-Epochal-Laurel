@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/screen-map.md", "reason": "Leaderboard screen layout and rendering strategy"}
+{"file": ".trellis/spec/frontend/component-catalog.md", "reason": "LeaderboardTable component spec"}
+{"file": ".trellis/spec/game-design/core-loop.md", "reason": "Victory tiers and scoring formula"}
+{"file": ".trellis/tasks/05-24-leaderboard-save-system-polish/prd.md", "reason": "Task requirements and acceptance criteria"}

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { SceneBackground } from "@/components/ui/SceneBackground";
 import { SealStamp } from "@/components/ui/SealStamp";
+import { recordScore, getPlayerSessionId } from "@/lib/actions/leaderboard";
+import { calculateScore } from "@/lib/game/scoring";
 import type { PalaceExamResult, VictoryTier } from "@/lib/actions/game";
 import type { RankingEntry } from "@/lib/engine/exam";
 
@@ -215,7 +217,30 @@ export default function PalacePage() {
         >
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
+              // Record victory to leaderboard if there's a victory tier
+              if (result.victoryTier) {
+                const { dynasty, character } = result.state;
+                const highTitle = character.titles.includes("状元") ? "状元" : "进士";
+                const score = calculateScore(highTitle, result.victoryTier, dynasty.total_generations);
+
+                await recordScore(dynasty.family_name, result.victoryTier, highTitle, dynasty.total_generations, score);
+
+                const sid = await getPlayerSessionId();
+                sessionStorage.setItem("player_session_id", sid);
+
+                sessionStorage.setItem("dynasty_summary", JSON.stringify({
+                  familyName: dynasty.family_name,
+                  tier: result.victoryTier,
+                  highestTitle: highTitle,
+                  generations: dynasty.total_generations,
+                  score,
+                }));
+
+                // Clear game save on victory
+                sessionStorage.removeItem("game_state");
+              }
+
               sessionStorage.removeItem("palace_result");
               router.push("/leaderboard");
             }}

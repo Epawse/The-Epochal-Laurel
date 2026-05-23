@@ -1,8 +1,35 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { SceneBackground } from "@/components/ui/SceneBackground";
 import { LandingTitle } from "@/components/game/LandingTitle";
 
 export default function LandingPage() {
+  const router = useRouter();
+  const [hasSave, setHasSave] = useState(false);
+
+  // Check for existing save in sessionStorage on mount
+  useEffect(() => {
+    const stored = sessionStorage.getItem("game_state");
+    if (stored) {
+      try {
+        JSON.parse(stored);
+        setHasSave(true);
+      } catch {
+        // Invalid stored state
+        setHasSave(false);
+      }
+    }
+  }, []);
+
+  function handleContinue() {
+    if (hasSave) {
+      router.push("/play");
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[80] grid place-items-center p-10">
       <SceneBackground src="/assets/study-room.png" opacity={0.78} />
@@ -48,13 +75,20 @@ export default function LandingPage() {
             </span>
           </Link>
 
-          {/* Secondary */}
+          {/* Secondary — Continue saved game */}
           <button
             type="button"
-            disabled
+            disabled={!hasSave}
+            onClick={handleContinue}
             className="px-6 py-3 bg-[rgba(34,26,19,0.6)] text-bone border border-hairline font-serif text-base tracking-[0.28em] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:border-gold-dim hover:text-gold hover:bg-[rgba(44,34,24,0.7)]"
+            title={!hasSave ? "暂无存档" : undefined}
           >
             继续旧梦
+            {!hasSave && (
+              <span className="block font-mono text-[9px] tracking-[0.12em] text-bone-mute mt-0.5">
+                暂无存档
+              </span>
+            )}
           </button>
 
           {/* Link */}

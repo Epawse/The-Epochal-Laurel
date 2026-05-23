@@ -1,0 +1,42 @@
+{
+  "id": "art-assets-and-ui-prototypes-via-gpt-image-2-claude-design",
+  "name": "art-assets-and-ui-prototypes-via-gpt-image-2-claude-design",
+  "title": "Art assets and UI prototypes via GPT Image 2 + Claude Design",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "haoran",
+  "assignee": "haoran",
+  "createdAt": "2026-05-23",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Assets complete and locally QA checked. Claude Design showcase is complete and exported under local/claude-design-showcase/; next step is a Game Prototype project starting with Daily Loop, Random Event, and Exam screens.",
+  "meta": {
+    "asset_status": {
+      "art_bible": "complete",
+      "scenes": "complete",
+      "characters": "complete",
+      "ui_decorations": "complete",
+      "key_moments": "complete",
+      "generation_log_records": 34,
+      "last_asset_qa": "2026-05-23"
+    },
+    "claude_design_status": {
+      "showcase": "complete_exported_local",
+      "showcase_export_path": "local/claude-design-showcase/",
+      "game_prototype_next": "start_core_flow_daily_loop_random_event_exam",
+      "game_prototype_scope_after_core": "landing_character_creation_palace_exam_inheritance_leaderboard"
+    }
+  }
+}

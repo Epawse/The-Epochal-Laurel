@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/05-23-art-assets-and-ui-prototypes-via-gpt-image-2-claude-design/prd.md", "reason": "Task requirements, layer definitions, prompt templates, and current handoff status"}
+{"file": ".trellis/tasks/05-23-art-assets-and-ui-prototypes-via-gpt-image-2-claude-design/research/art-style-directions.md", "reason": "Art style decision context and era palettes"}
+{"file": ".trellis/tasks/05-23-art-assets-and-ui-prototypes-via-gpt-image-2-claude-design/research/gpt-image-2-ink-painting.md", "reason": "Prompt engineering patterns, resolution specs, batch workflow"}
+{"file": ".trellis/tasks/05-23-art-assets-and-ui-prototypes-via-gpt-image-2-claude-design/research/asset-pipeline-organization.md", "reason": "Directory structure, naming conventions, manifest approach"}
+{"file": ".trellis/tasks/05-23-art-assets-and-ui-prototypes-via-gpt-image-2-claude-design/research/claude-design-prototyping.md", "reason": "Claude Design capabilities, export formats, uploaded-asset handling, and workflow"}
+{"file": ".trellis/spec/game-design/core-loop.md", "reason": "Game screens, visual moments P0-P2, pacing targets"}
+{"file": ".trellis/spec/game-design/data-model.md", "reason": "Character/world state for prototype screen content"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Component structure for prototype-to-code mapping"}

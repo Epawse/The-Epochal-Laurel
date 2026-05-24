@@ -377,9 +377,13 @@ event_chance_per_season = 0.20 + (fortune / 500)  // fortune affects frequency
 
 ### 小抄/夹带 (Cheat Sheet)
 
+> **SUPERSEDED**: The erudition multiplier below (×0.6) applies to the OLD formula.
+> Under the new formula (This Iteration > Cheat Sheet interaction), the effect is
+> `erudition * W_ERUDITION * 2` = `erudition * 0.8` (W_ERUDITION=0.4).
+
 ```
 activation_cost: Fortune -10
-effect: erudition_bonus uses (erudition * 2) instead of erudition in the score formula
+effect (OLD formula): erudition_bonus uses (erudition * 2) instead of erudition in the score formula
          i.e., erudition_bonus = (erudition * 2) * 0.3 = erudition * 0.6
          final score is still clamp(raw_score, 0, 100)
 exposure_chance: 0.15
@@ -417,8 +421,13 @@ not_available_in: palace_exam
 
 ### Scheme Exposure Risk
 
+> **SUPERSEDED**: Under the new system (This Iteration > Action Differentiation),
+> scheme exposure resolves via a dice check (`rollCheck` with modifier = `fortune/10 +
+> dice_modifier("scheme")`, DC tuned in PR3). The flat probability below is kept for
+> reference only.
+
 ```
-exposure_chance = 0.15 - (fortune * 0.001)  // min 5%, max 15%
+exposure_chance (OLD) = 0.15 - (fortune * 0.001)  // min 5%, max 15%
 ```
 
 On exposure:
@@ -442,3 +451,278 @@ These are design goals for playtesting:
 | Exam pass rate (provincial, first attempt) | 30% |
 | Exam pass rate (metropolitan, first attempt) | 15% |
 | Average run length to victory | 60-90 minutes |
+
+---
+
+## Dice Primitive (This Iteration)
+
+A seeded resolution mechanic for events, scheme/social outcomes, and exam performance
+variance. All rolls use the existing `Rng` (seeded, reproducible). The UI surfaces
+roll / modifier / DC / tier.
+
+### rollCheck
+
+```
+rollCheck({ modifier, dc, rng }) → { roll, total, tier }
+
+roll   = rng.nextInt(1, 20)          // d20
+total  = roll + modifier
+tier   =
+  roll == 20           → "crit_success"
+  total >= dc + 5      → "crit_success"
+  total >= dc          → "success"
+  roll == 1            → "crit_fail"
+  total < dc - 5       → "crit_fail"
+  otherwise            → "fail"
+```
+
+### Modifier sources
+
+| Context | Modifier formula |
+|---------|-----------------|
+| Event choice with `check.stat` | `stat_value / 10` (rounded) + sum of `dice_modifier` Effects matching category |
+| Scheme exposure | `fortune / 10` + dice_modifier("scheme") |
+| Social outcome | `fortune / 10` + dice_modifier("social") |
+| Exam performance roll | `(erudition + fortune) / 20` + dice_modifier("exam") |
+
+### Exam Performance Roll
+
+Layered on top of the multi-dimensional score formula (not replacing it). Bounded
+so it swings the result but doesn't dominate:
+
+```
+performance_roll = rng.nextInt(1, 20)
+performance_modifier = (erudition + fortune) / 20 + dice_modifier("exam")
+performance_total = performance_roll + performance_modifier
+
+variance =
+  performance_roll == 20  → +PR3_CRIT_BONUS   // 超常发挥 (tuned in PR3, target ≈ +12)
+  performance_total >= 15 → +PR3_HIGH_BONUS    // 发挥良好 (tuned in PR3, target ≈ +6)
+  performance_total >= 8  → 0                  // 正常发挥
+  performance_total < 8   → -PR3_LOW_PENALTY   // 发挥失常 (tuned in PR3, target ≈ -8)
+  performance_roll == 1   → -PR3_CRIT_PENALTY  // 严重失常 (tuned in PR3, target ≈ -15)
+```
+
+The variance is added to the final exam score AFTER the multi-dimensional formula.
+Clamped to [0, 100] as before.
+
+---
+
+## Exam Scoring (This Iteration — supersedes "Player Score Calculation" above)
+
+The old formula (`base_score + erudition*0.3 + court_whims_bonus`) is replaced.
+The old section is kept for reference; the engine MUST use the new formula below.
+
+### New Fixed-Choice Score Formula
+
+```
+raw_score = base_score * W_BASE
+          + erudition * W_ERUDITION
+          + alignment_term
+          + relic_exam_bonus
+          + variance
+
+score = clamp(raw_score, 0, 100)
+```
+
+Weight constants (tuned in PR3 — targets below):
+
+| Constant | Target | Rationale |
+|----------|--------|-----------|
+| W_BASE | 0.4 | Lowers base_score dominance; a 70-base choice contributes 28, not 70 |
+| W_ERUDITION | 0.4 | Erudition 80 → 32; still important but not sufficient alone |
+
+### relic_exam_bonus
+
+```
+relic_exam_bonus = sum of all exam_score Effect values from collectModifiers(character, world)
+                  where the Effect's `levels` field includes the current exam level
+                  (or `levels` is absent/undefined, meaning "applies to all levels")
+```
+
+Example: a relic with `{ kind: "exam_score", value: 5 }` (no `levels`) adds +5 to all
+exams. A relic with `{ kind: "exam_score", value: 8, levels: ["metropolitan","palace"] }`
+adds +8 only to 会试 and 殿试.
+
+### Alignment Term (intel gate)
+
+| Level | alignment_term | Gate behavior |
+|-------|---------------|---------------|
+| 童试/乡试 | none 0 / partial +8 / full +16 | No gate — alignment is a bonus only |
+| 会试 | none → **score capped at PR3_MET_CAP** / partial +12 / full +24 | Misalignment caps score below threshold |
+| 殿试 | none → **score capped at PR3_PAL_CAP** / partial +12 / full +24 | Same gate; competitive ranking makes it even more punishing |
+
+PR3_MET_CAP target ≈ 55 (below the 75 threshold). PR3_PAL_CAP target ≈ 50.
+
+**This makes court-intel (socialize/scheme) mechanically required for 会试/殿试.**
+
+### New Free-Text Score Formula
+
+```
+raw_score = judge_lm_score * 0.55
+          + erudition * W_ERUDITION
+          + relic_exam_bonus
+          + variance
+
+score = clamp(raw_score, 0, 100)
+```
+
+The Judge (E2) already evaluates alignment in its rubric, so no explicit alignment
+term. The alignment gate still applies: if the Judge's alignment dimension score is
+below a threshold (PR3-tuned), the engine caps the final score the same way.
+
+### Cheat Sheet interaction (updated)
+
+With cheat sheet active: `erudition * W_ERUDITION` becomes `erudition * W_ERUDITION * 2`.
+All other terms unchanged. Exposure chance/penalty unchanged.
+
+### Palace Rival Rescale
+
+`getRivalStrength` is recalibrated so gen-1 rivals are competitive:
+
+| dynasty_generation | rival_strength | score range |
+|-------------------|---------------|-------------|
+| 1 | moderate | 55–80 |
+| 2 | moderate | 55–80 |
+| 3–4 | strong | 65–90 |
+| ≥5 | elite | 75–95 |
+
+(Old: gen 1–2 = weak 40–65. New: gen 1 rivals already score in the 55–80 band,
+making a first-gen 状元 require near-perfect play + luck.)
+
+---
+
+## Origin Skill Kits (This Iteration)
+
+Each origin ships a small skill kit (passives + 1 signature active). These replace
+the old single-trait description and are implemented as `Skill` objects (see
+data-model.md). The old trait names are preserved as the passive skill name.
+
+| Origin | Passive skill(s) | Signature active | Active cost | Cooldown |
+|--------|-----------------|------------------|-------------|----------|
+| 寒门孤儿 | 囊萤映雪: `action_cost(study, drive, 0)` — study costs 0 drive | 悬梁刺股: this season's study erudition gain ×2 | Drive -8 | 1 exam cycle |
+| 耕读之家 | 宗族荫庇: `exam_threshold(provincial, -5)` | 族中相助: next event check gets +5 modifier | Wealth -5 | 1 exam cycle |
+| 盐商庶子 | 铜臭难洗: `dice_modifier(social, -2)` (social checks harder) | 挥金如土: immediately gain 3 random shop relics to pick from | Wealth -20 | 1 exam cycle |
+| 没落官宦 | 旧日荣光: start with 1 patron NPC (affinity 30) | 故交旧识: reveal one court_whims dimension fully | Fortune -10 | 1 exam cycle |
+
+### Skill acquisition beyond origin
+
+Skills can also be granted by:
+- Events (reward field)
+- Mentor NPC (affinity ≥ 70 → teaches a skill)
+- Exam milestones (first 秀才 → a passive; first 举人 → a passive)
+- Rare relics (some relics grant a skill on pickup)
+
+Max skills per character: 6 (prevents unbounded stacking).
+
+---
+
+## Action Differentiation (This Iteration)
+
+Each action now has a distinct strategic payoff beyond raw stat changes. The stat
+ranges in the table above remain (with the `[min, max]` authoring contract preserved);
+these are the **additional** per-action mechanics:
+
+| Action | Additional mechanic | Why it matters for exams |
+|--------|-------------------|------------------------|
+| Study (读书) | 10% chance per season to trigger an academic relic draft (3-choose-1) | Relics with `exam_score` effects |
+| Socialize (交游) | Reveals `emperor_temperament` (partial/full per existing rules) + 15% social relic draft | Intel for alignment gate + social relics |
+| Scheme (钻营) | Reveals `style` (per existing rules) + 20% powerful-but-risky relic draft; dice check for exposure | Intel for alignment gate + high-risk relics |
+| Earn (营生) | Accumulates wealth → unlocks **merchant shop** (spend wealth on relics/tools) | Wealth = purchasing power for build |
+| Rest (休养) | 15% chance to gain 灵感 timed buff (+5 exam_score for 4 turns) | Timed exam boost |
+
+### Merchant Shop
+
+Available when `wealth ≥ 15`. Presents 3 relics (seeded from a pool, refreshed each
+exam cycle). Costs wealth to purchase. Gives 营生 a concrete exam-relevant payoff.
+
+---
+
+## World / Era Modifiers (This Iteration)
+
+Low-probability run/era-level modifiers that bias event categories or outcomes.
+Implemented as `Modifier` objects in `world.world_modifiers` (source.type = "world").
+
+### Trigger
+
+At era start (including game start), roll:
+```
+world_modifier_chance = 0.30   // 30% chance an era has a world modifier
+```
+
+If triggered, pick one from the era's pool (seeded RNG):
+
+| Era | Possible modifiers |
+|-----|-------------------|
+| Prosperity | 天降祥瑞 (opportunity weight ×1.5) · 文风鼎盛 (study gain +1) |
+| Decline | 世道艰难 (misfortune weight ×1.5) · 党争激烈 (scheme exposure +5%) |
+| Invasion | 兵燹四起 (misfortune weight ×1.8, danger ×1.5) · 流离相护 (event dice +2) |
+| Restoration | 百业渐兴 (earn wealth +3) · 中兴求贤 (county/provincial/metropolitan threshold −3) |
+
+Surfaced to the player at era start. Persists until next era change.
+
+---
+
+## Mourning & Catastrophe (This Iteration)
+
+### Mourning (守孝 / 丁忧)
+
+Triggered by a "parent death" misfortune event (generated by V1 when character
+age ≥ 30 and no prior mourning this generation; ~15% of misfortune events for
+eligible characters).
+
+Effect: `Modifier { id: "mourning", effect: action_block(["socialize","scheme"]), turns_remaining: 12 }`
+
+- Blocks socialize and scheme for 12 turns (3 years)
+- Can study, earn, rest
+- **夺情特许 blessing** (if unlocked): skips mourning entirely (modifier not applied)
+
+### Catastrophe (灾祸)
+
+Triggered by severe misfortune events (flood, war, plague — V1 generates these in
+decline/invasion eras with ~10% of misfortune events).
+
+Effect:
+- Immediate stat penalty (Erudition -5, Fortune -12, Drive -10, Wealth -10)
+- Grants `catastrophe_survivor` modifier (permanent, no effect — used for blessing-point achievement check)
+- Grants a **rare relic** (thematic: 劫后余生 — survival-themed effect)
+
+---
+
+## Blessing Wiring (This Iteration — fixes 5 inert blessings)
+
+All 8 blessings now emit typed Effects via the effect engine. The 3 that already
+worked are noted; the 5 newly wired ones are marked.
+
+| Blessing | Effect(s) | Status |
+|----------|----------|--------|
+| 家学渊源 | `meta(starting_erudition, +20)` | was working |
+| 过目不忘 | `action_gain(study, erudition, +2)` | **newly wired** |
+| 行贿有方 | `meta(scheme_exposure, -0.05)` + `dice_modifier(scheme, +3)` | **newly wired** |
+| 官场人脉 | `action_gain(socialize, fortune, +3)` + `dice_modifier(social, +2)` | **newly wired** |
+| 夺情特许 | `meta(skip_mourning, 1)` — engine checks this before applying mourning | **newly wired** |
+| 命硬 | `meta(max_age, +10)` | was working |
+| 祖产丰厚 | `meta(starting_wealth, +20)` | was working |
+| 商道传家 | `action_gain(earn, wealth, +5)` | **newly wired** |
+
+---
+
+## Roll-able Diverse Starts (This Iteration)
+
+Generation 1 character creation produces a randomized starting package:
+
+```
+1. Player chooses origin (as before)
+2. Engine applies origin modifiers + origin skill kit
+3. Engine rolls a "starting package" (seeded):
+   - Stat jitter: Erudition -2..+4, Fortune -5..+8, Drive -6..+4, Wealth +0..+8
+   - One bonus starting relic (common rarity, from a gen-1 pool of ~10)
+   - One bonus skill from the generic skill catalog
+   - One bonus trait from the starting-trait pool (`早慧`, `胆大`, `谨慎`, `善记`, `耐劳`)
+   - Initial court_whims are rolled (as before)
+4. Player sees the full package + seed number
+5. Player may REROLL (re-seeds, re-rolls everything in step 3)
+6. Same seed always produces the same package (deterministic)
+```
+
+Generation 2+ keeps the inheritance-driven flow (no reroll — the heir IS the reroll).

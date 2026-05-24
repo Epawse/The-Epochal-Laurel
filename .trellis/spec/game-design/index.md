@@ -15,6 +15,7 @@ A text-based roguelike where your family spends generations trying to pass the h
 1. **Lightweight daily choices with deep consequences** — Persona-style seasonal action selection, not hardcore essay writing
 2. **Generational weight** — You are your grandfather's sequel and your grandson's prelude
 3. **AI-native unpredictability** — Every event, exam question, and NPC interaction is unique per run
+4. **Roguelike build variety** — Relics, skills, dice rolls, and per-life builds make every generation play differently; no single dominant strategy
 
 ---
 

@@ -455,6 +455,144 @@ Used as `{{era_description}}` in prompts:
 
 ---
 
+## PT-V1 v2.0: Event Generation with Dice Checks & Rewards (This Iteration)
+
+**Version**: 2.0  
+**Used by**: AI Contract V1 (updated)  
+**Model Tier**: Low (default: `deepseek-v4-flash`)  
+**Temperature**: 0.8
+
+### System Prompt (additions to v1.0)
+
+```
+[... all v1.0 rules remain ...]
+
+ADDITIONAL RULES (v2.0):
+10. For choices that involve risk or uncertainty, you MAY include a "check" field
+    instead of fixed stat_changes. The check uses a dice mechanic:
+    - "stat": which character stat provides the modifier (fortune/erudition/drive)
+    - "dc": difficulty class (6-16 range; 8=easy, 12=moderate, 15=hard)
+    - "outcomes": stat_changes for each tier (crit_success/success/fail/crit_fail)
+    - Each outcome's stat changes follow the same ±15 cap
+    - Use checks for choices where the outcome SHOULD feel uncertain
+    - Safe/guaranteed choices should still use plain stat_changes (no check)
+
+11. For opportunity and social events, you MAY include a "reward" field:
+    - "type": "relic_draft" (player picks 1 of 3 relics) | "skill_grant" | "buff"
+    - Only include reward on events where it narratively makes sense (finding treasure,
+      mentor teaching, divine blessing, etc.)
+    - Do NOT include rewards on misfortune events
+    - Relic IDs must come from the provided available_relic_pool
+
+12. Event tone and style guidelines:
+    - Mix black humor with gravitas (per design pillars: "light-hearted surface with
+      philosophical undertones")
+    - Era-specific flavor is mandatory: prosperity events feel leisurely; invasion
+      events feel desperate
+    - Multi-step events: for political and opportunity types, you may generate a
+      "continuation" hint suggesting a follow-up event next season (engine handles this)
+    - Vary event archetypes: don't always generate "someone asks you for help" —
+      use natural disasters, political intrigue, family drama, scholarly disputes,
+      supernatural encounters, market opportunities, etc.
+
+13. World modifier awareness: if world_modifier is provided, let it color the event
+    tone and difficulty (e.g., 世道艰难 → misfortune events are harsher)
+```
+
+### Example Output (Opportunity with dice check + reward, Prosperity Era)
+
+```json
+{
+  "title": "奇书现世",
+  "description": "春日书市，一老翁摆摊售卖残破古籍。你翻阅之下，疑似失传已久的《太公六韬》残卷。老翁要价不菲，且有另一买家虎视眈眈。",
+  "choices": [
+    {
+      "id": "a",
+      "label": "当场高价买下",
+      "stat_changes": {"erudition": 5, "fortune": 0, "drive": 0, "wealth": -15},
+      "narrative_preview": "虽然囊中羞涩，但此书到手，学问必有精进"
+    },
+    {
+      "id": "b",
+      "label": "与老翁攀谈砍价",
+      "check": {
+        "stat": "fortune",
+        "dc": 10,
+        "outcomes": {
+          "crit_success": {"erudition": 8, "fortune": 5, "drive": 0, "wealth": -5},
+          "success": {"erudition": 5, "fortune": 2, "drive": 0, "wealth": -8},
+          "fail": {"erudition": 0, "fortune": -3, "drive": -2, "wealth": 0},
+          "crit_fail": {"erudition": 0, "fortune": -5, "drive": -5, "wealth": 0}
+        }
+      },
+      "narrative_preview": "若能说动老翁，或可低价得手；若失败，书落他人之手"
+    },
+    {
+      "id": "c",
+      "label": "记下内容后离去",
+      "stat_changes": {"erudition": 2, "fortune": 0, "drive": -3, "wealth": 0},
+      "narrative_preview": "匆匆默记几页要义，虽不完整，聊胜于无"
+    }
+  ],
+  "allows_free_input": true,
+  "free_input_context": "若能想到借助人脉或巧妙手段获取此书的方法",
+  "reward": {
+    "type": "relic_draft",
+    "relic_ids": ["ancient_scroll", "scholars_brush", "fortune_charm"]
+  }
+}
+```
+
+### Example Output (Misfortune with dice check, Invasion Era, black humor)
+
+```json
+{
+  "title": "兵过如梳",
+  "description": "败兵过境，如蝗虫过田。你家的鸡鸭已被搜刮一空，现在他们盯上了你的书房。领头的兵痞识得几个字，正翻你的藏书品头论足。",
+  "choices": [
+    {
+      "id": "a",
+      "label": "忍气吞声，保命要紧",
+      "stat_changes": {"erudition": -5, "fortune": -3, "drive": -8, "wealth": -10},
+      "narrative_preview": "书没了，命还在。只是这口气，咽得下去吗？"
+    },
+    {
+      "id": "b",
+      "label": "以文会友，与兵痞论书",
+      "check": {
+        "stat": "erudition",
+        "dc": 13,
+        "outcomes": {
+          "crit_success": {"erudition": 3, "fortune": 10, "drive": 5, "wealth": -3},
+          "success": {"erudition": 0, "fortune": 5, "drive": 0, "wealth": -5},
+          "fail": {"erudition": -3, "fortune": -5, "drive": -10, "wealth": -10},
+          "crit_fail": {"erudition": -8, "fortune": -10, "drive": -15, "wealth": -15}
+        }
+      },
+      "narrative_preview": "若能以学问折服此人，或可保住藏书；若弄巧成拙……"
+    }
+  ],
+  "allows_free_input": true,
+  "free_input_context": "若能想到利用地形、邻里或其他手段化解危机"
+}
+```
+
+---
+
+## Event Archetype Reference (This Iteration)
+
+A non-exhaustive list of event archetypes to guide V1 generation variety. The AI
+should rotate through these rather than defaulting to "someone asks for help":
+
+| Category | Archetypes |
+|----------|-----------|
+| Opportunity | 奇遇 (chance meeting), 宝物 (treasure found), 贵人 (patron appears), 天赐 (divine blessing), 商机 (market opportunity) |
+| Misfortune | 天灾 (natural disaster), 人祸 (political persecution), 病疫 (illness), 盗匪 (bandits), 丧亲 (bereavement) |
+| Social | 婚姻 (marriage proposal), 文会 (literary gathering), 争端 (scholarly dispute), 邻里 (neighbor conflict), 师徒 (mentor event) |
+| Political | 朝局 (court faction shift), 新帝 (new emperor), 变法 (reform), 党争 (factional purge), 恩科 (special exam) |
+
+---
+
 ## Prompt Maintenance Rules
 
 1. **Never modify prompts in production without versioning** — create v1.1, not overwrite v1.0

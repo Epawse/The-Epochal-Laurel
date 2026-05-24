@@ -237,10 +237,14 @@ The engine then computes the final ranking (dead code): it appends the player's 
 - Ranking and title assignment are performed by the engine (see Output Schema note), NOT by the model
 
 ### Rival Strength Determination
+
+> **SUPERSEDED**: See "Contract Changes (This Iteration) > E3 Changes" below for the
+> updated tiers (weak removed; moderate/strong/elite). The old formula is kept for reference.
+
 ```
-rival_strength = "weak" if dynasty_generation <= 2
-               = "moderate" if dynasty_generation <= 4
-               = "strong" if dynasty_generation >= 5
+rival_strength (OLD) = "weak" if dynasty_generation <= 2
+                     = "moderate" if dynasty_generation <= 4
+                     = "strong" if dynasty_generation >= 5
 ```
 
 ### Model Selection
@@ -311,7 +315,13 @@ Generate a contextual life event for the current season.
 - `description` MUST reference character name and current season/era
 
 ### Fallback
-If AI call fails: draw from a static event pool (20 generic events per era).
+If AI call fails: draw deterministically from a static category pool using the
+character name + world year + season + event type. The fallback must still satisfy
+the current V1 contract: opportunity/social fallbacks may grant `relic_draft`
+rewards from `available_relic_pool`, at least some fallback choices include
+`check` payloads with `dc` in 6-16, and misfortune fallbacks must not grant AI
+rewards. Bereavement fallback titles/descriptions should include a mourning marker
+such as `讣音`, `病逝`, `丁忧`, or `守孝` so the engine's mourning hook can apply.
 
 ---
 
@@ -480,6 +490,114 @@ Generate heir candidates for the inheritance phase.
 
 ### Fallback
 If AI call fails: generate heirs procedurally (random name + random traits from static pool).
+
+---
+
+## Contract Changes (This Iteration)
+
+### E1 Changes: Exam Question Generation
+
+The E1 contract gains additional guidance for the new scoring system:
+
+**New constraints on `base_score`**:
+- Range remains 40–70, but the prompt MUST instruct the model that **not every
+  question set should have a `full` alignment choice**. At least 30% of generated
+  questions should have no `full`-aligned choice (only `partial` and `none`), forcing
+  players to rely on intel + erudition rather than always having a "perfect pick".
+- The highest `base_score` choice (typically 65–70) MUST carry a `risk` field. Safe
+  choices (`risk: null`) are capped at `base_score ≤ 50`.
+
+**New input field** (optional, for context):
+```json
+{
+  "character_relics": ["string (relic names for flavor only — does NOT affect scoring)"],
+  "world_modifier": "string | null (current era modifier name, for thematic flavor)"
+}
+```
+
+These are flavor-only — the engine scores mechanically. They help the AI generate
+thematically appropriate questions.
+
+### V1 Changes: Random Event Generation
+
+The V1 output schema gains two optional fields:
+
+```json
+{
+  "choices": [
+    {
+      "id": "a",
+      "label": "string",
+      "stat_changes": { ... },
+      "narrative_preview": "string",
+      "check": {
+        "stat": "fortune | erudition | drive",
+        "dc": 8,
+        "outcomes": {
+          "crit_success": { "erudition": 0, "fortune": 15, "drive": 0, "wealth": 5 },
+          "success":      { "erudition": 0, "fortune": 8, "drive": 0, "wealth": 0 },
+          "fail":         { "erudition": 0, "fortune": -5, "drive": -3, "wealth": 0 },
+          "crit_fail":    { "erudition": -5, "fortune": -10, "drive": -8, "wealth": 0 }
+        }
+      }
+    }
+  ],
+  "reward": {
+    "type": "relic_draft | skill_grant | buff",
+    "relic_ids": ["id1", "id2", "id3"],
+    "skill_id": null,
+    "buff": null
+  }
+}
+```
+
+**`check`** (optional per choice): When present, the engine resolves the choice via
+the dice primitive instead of applying fixed `stat_changes`. The `stat_changes` field
+serves as fallback for choices without a `check`. Constraint: `dc` range 6–16;
+outcome stat changes follow the same ±15 cap.
+
+**`reward`** (optional per event): When present, the engine triggers a relic draft,
+skill grant, or timed buff after the event resolves. The AI picks from a curated pool
+(IDs provided in a new input field `available_relic_pool`). Constraint: reward is
+offered only on `opportunity` and `social` event types; `misfortune` events do NOT
+grant rewards (catastrophe relics are engine-granted, not AI-granted).
+
+**New V1 input fields**:
+```json
+{
+  "available_relic_pool": ["relic_id_1", "relic_id_2", ...],
+  "character_skills": ["skill_name_1", ...],
+  "character_relics": ["relic_name_1", ...],
+  "world_modifier": "string | null"
+}
+```
+
+### E3 Changes: Palace Rival Rescale
+
+**Rival strength determination** (supersedes old formula):
+```
+rival_strength = "moderate" if dynasty_generation <= 2
+               = "strong"   if dynasty_generation <= 4
+               = "elite"    if dynasty_generation >= 5
+```
+
+**Score ranges** (updated):
+| rival_strength | score range |
+|---------------|-------------|
+| moderate | 55–80 |
+| strong | 65–90 |
+| elite | 75–95 |
+
+The `elite` tier is new. Prompt instructs the model that elite rivals should have
+at least one rival scoring ≥ 85.
+
+### R1 Changes: Narration Constraints
+
+Preserved from the recent `f4651d8` fix — the R1 prompt MUST include:
+- Do not invent rankings for 童试/乡试/会试 (threshold exams are pass/fail only)
+- Ranking language (状元/榜眼/探花/进士) is allowed ONLY for 殿试 results
+- For exam results with a performance roll, the narration may reference 超常发挥 or
+  发挥失常 when the variance was significant (|variance| > 8)
 
 ---
 

@@ -43,14 +43,10 @@ The game engine maintains a single JSON object as the source of truth. AI genera
       { "npc_id": "uuid", "type": "mentor | rival | spouse | patron", "affinity": 50 }
     ],
 
-    "inventory": [
-      { "item_id": "string", "name": "考官文集", "effect": "court_whims_reveal", "quantity": 1 }
-    ],
+    "inventory": [],  // DEPRECATED — replaced by character.relics (see Roguelike Layer below)
 
     "traits": ["勤勉", "体弱"],
-    "status_effects": [
-      { "type": "mourning", "turns_remaining": 12 }
-    ],
+    "status_effects": [],  // DEPRECATED — replaced by character.modifiers (see Roguelike Layer below)
 
     "family": {
       "spouse": { "npc_id": "uuid", "married_year": 1045, "fertile_until_year": 1062 },
@@ -258,13 +254,191 @@ When an era transition occurs:
 
 ---
 
+## Roguelike Layer: Effects · Modifiers · Relics · Skills (This Iteration)
+
+> Added by the roguelike-depth iteration. **Dead code controls numbers; AI controls
+> narrative** still holds — every Effect below is engine-evaluated, never AI-applied.
+> One typed-effect engine underpins relics, skills, origin traits, blessings, buffs,
+> and world modifiers, so there is a single evaluation path.
+
+### Effect (discriminated union)
+
+The atomic, engine-evaluated modifier. `kind` selects the payload. The set is
+extensible; this is the representative vocabulary (full enum lives in code +
+balance.md). Numbers in examples are illustrative — magnitudes are tuned in PR3.
+
+| kind | payload | evaluated at | example user |
+|------|---------|--------------|--------------|
+| `action_gain` | `{ action: ActionId\|"*", stat, value?, mult? }` | action resolution | 商道传家 (earn wealth +5) |
+| `action_cost` | `{ action, stat, value }` | action resolution | 囊萤映雪 (study drive cost →0) |
+| `action_block` | `{ actions: ActionId[] }` | action availability | 丁忧守孝 (mourning) |
+| `exam_score` | `{ value?, mult?, levels?: ExamLevel[] }` | exam scoring | a relic giving +5 exam score |
+| `exam_threshold` | `{ levels: ExamLevel[], value }` | exam threshold | 宗族荫庇 (provincial −5) |
+| `exam_alignment_relax` | `{ levels: ExamLevel[] }` | alignment gate | relic that bypasses the intel gate once |
+| `intel_grant` | `{ dimension: "style"\|"temperament", level: "partial"\|"full" }` | on grant | a patron-gift relic |
+| `dice_modifier` | `{ category: DiceCategory\|"*", value }` | dice checks | a relic giving +2 to social checks |
+| `event_bias` | `{ event_type: EventType, weight_mult?, danger_mult? }` | event roll | world modifier 天降祥瑞 |
+| `meta` | `{ key: "max_age"\|"child_survival"\|"scheme_exposure"\|..., value }` | various | 命硬 (max_age +10) |
+
+```ts
+type DiceCategory = "social" | "scheme" | "exam" | "event";
+
+type Effect =
+  | { kind: "action_gain"; action: ActionId | "*"; stat: StatKey; value?: number; mult?: number }
+  | { kind: "action_cost"; action: ActionId | "*"; stat: StatKey; value: number }
+  | { kind: "action_block"; actions: ActionId[] }
+  | { kind: "exam_score"; value?: number; mult?: number; levels?: ExamLevel[] }
+  | { kind: "exam_threshold"; levels: ExamLevel[]; value: number }
+  | { kind: "exam_alignment_relax"; levels: ExamLevel[] }
+  | { kind: "intel_grant"; dimension: "style" | "temperament"; level: "partial" | "full" }
+  | { kind: "dice_modifier"; category: DiceCategory | "*"; value: number }
+  | { kind: "event_bias"; event_type: EventType; weight_mult?: number; danger_mult?: number }
+  | { kind: "meta"; key: string; value: number };
+```
+
+### Modifier (generalizes the old `status_effects`)
+
+A named carrier that attaches one `Effect` to a character or the world, with an
+optional lifetime. **`character.status_effects` is replaced by `character.modifiers`**;
+the old `exam_ban` / `mourning` / `catastrophe_survivor` entries become modifiers.
+
+```json
+{
+  "id": "mourning",
+  "source": { "type": "event", "id": "parent_death" },   // origin|relic|skill|blessing|event|world|tool
+  "label": "丁忧守孝",
+  "effect": { "kind": "action_block", "actions": ["socialize", "scheme"] },
+  "turns_remaining": 12      // null = permanent (traits, relic/skill passives); number = timed buff/debuff
+}
+```
+
+`collectModifiers(character, world)` gathers every active Modifier (from
+`character.modifiers` + the passives implied by `relics`/`skills`/origin traits +
+`world.world_modifiers` + bridged legacy `status_effects`) so action resolution,
+exam scoring, dice checks, and turn ticking all read one merged list. Stacking rule:
+additive `value`s sum; `mult`s multiply; same-`id` permanent modifiers do not
+duplicate.
+
+`character.status_effects` remains in the save schema as a deprecated
+compatibility field while old saves and mirrored legacy effects are phased out.
+New mechanics should write `character.modifiers`; if an old status entry is still
+present, the engine bridges it into the typed-effect path rather than reading it
+directly in gameplay code.
+
+### Relic
+
+```json
+{
+  "id": "wenquxing_charm",
+  "name": "文曲星君签",
+  "rarity": "common | rare | legendary",
+  "slot": "common | heirloom_eligible",   // only heirloom_eligible relics can be carried to an heir
+  "effects": [ { "kind": "exam_score", "value": 5 } ],
+  "flavor": "string"
+}
+```
+
+Stored in `character.relics`. Per-life by default (lost at death). At inheritance the
+player may pick **≤1** `heirloom_eligible` relic to carry over (see `dynasty.pending_heirloom`).
+
+### Skill
+
+```json
+{
+  "id": "xuanliang_cigu",
+  "name": "悬梁刺股",
+  "kind": "passive | active",
+  "effects": [ { "kind": "action_gain", "action": "study", "stat": "erudition", "mult": 2 } ],
+  "cost": { "drive": 5 },          // active only
+  "cooldown_cycles": 1,            // active only — exam cycles
+  "cooldown_remaining": 0          // active only
+}
+```
+
+Stored in `character.skills`. Passive skills emit Effects via `collectModifiers`.
+Active skills are player-triggered (action/exam UI), pay `cost`, set `cooldown_remaining`.
+Each origin ships one signature skill kit (passives + ≤1 signature active) — see
+balance.md > Origin Skill Kits. Skills are also grantable by events / relics / exam milestones.
+
+### Character additions
+
+```json
+{
+  "relics": [ /* Relic[] */ ],
+  "skills": [ /* Skill[] */ ],
+  "modifiers": [ /* Modifier[] — replaces status_effects */ ]
+}
+```
+
+### World additions
+
+```json
+{
+  "world_modifiers": [ /* Modifier[] with source.type="world"; run/era-scoped event biases */ ]
+  // rng_seed (top-level save field) is now surfaced to the player and may be entered at creation.
+}
+```
+
+### Event additions (dice + rewards)
+
+A choice may carry a dice `check` (then outcome is per-tier, **not** a fixed
+`stat_changes`); an event may carry a typed `reward`.
+
+```json
+{
+  "choices": [
+    {
+      "id": "a",
+      "label": "string",
+      "check": {
+        "stat": "fortune",            // modifier source for the roll
+        "dc": 12,
+        "outcomes": {
+          "crit_success": { "fortune": 15 },
+          "success":      { "fortune": 8 },
+          "fail":         { "fortune": -4 },
+          "crit_fail":    { "fortune": -10 }
+        }
+      },
+      "stat_changes": { "fortune": 5 }   // fallback when no `check` (back-compat)
+    }
+  ],
+  "reward": { "type": "relic_draft", "relic_ids": ["relic_id_1", "relic_id_2", "relic_id_3"], "skill_id": null, "buff": null }  // optional; canonical schema in ai-contracts.md
+}
+```
+
+### Dynasty addition (heirloom carry)
+
+```json
+{ "pending_heirloom": null }   // Relic|null — chosen at inheritance, consumed when the heir is created
+```
+
+### Save migration (version 0.1.0 → 0.2.0)
+
+The loader MUST default/migrate so pre-change saves still Zod-parse (the deployed
+demo must not break):
+
+| New field | Default / migration |
+|-----------|---------------------|
+| `character.relics` | `[]` |
+| `character.skills` | derived from origin kit, else `[]` |
+| `character.modifiers` | migrate/bridge each old `status_effects[]` entry → Modifier (`mourning`→action_block on socialize/scheme, other statuses→meta); retain deprecated `status_effects` as an optional compatibility field |
+| `world.world_modifiers` | `[]` |
+| `dynasty.pending_heirloom` | `null` |
+| event `choice.check` / `reward` | optional (absent = legacy fixed `stat_changes`) |
+| `version` | bump to `"0.2.0"`; loader keys migration off the stored version |
+
+Zod: new fields use `.default([])` / `.optional()` / `.nullable()` so old payloads validate.
+
+---
+
 ## Save Format
 
 The complete game state is the union of all above objects:
 
 ```json
 {
-  "version": "1.0.0",
+  "version": "0.2.0",
   "character": { ... },
   "world": { ... },
   "dynasty": { ... },

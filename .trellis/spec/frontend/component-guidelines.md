@@ -51,6 +51,16 @@ export function CaptureBanner({ name, rank }: { name: string; rank: string }) {
 - Every animated moment honors `prefers-reduced-motion`; the game must be fully playable with motion off.
 - Action buttons are real `<button>`s, keyboard-reachable; free-text uses a labeled `<textarea>`.
 
+## Language: Chinese-only UI
+
+All player-facing text MUST be Simplified Chinese. No English in the game UI unless absolutely unavoidable (e.g., a third-party widget with no i18n support).
+
+This applies to: button labels, stat names, tooltips, error/empty states, narration, relic/skill/event names, modal titles, placeholder text, loading indicators.
+
+English is permitted only in: CSS classes, `data-` attributes, internal identifiers, code comments, and developer-facing logs — anything the player never sees.
+
+Static chrome labels (按钮、标题、提示) live in components or `lib/game/display.ts`. Dynamic narrative text comes from the server (AI contracts generate Chinese). When adding new UI elements, source Chinese labels from `display.ts` or add them there — do not inline English strings that will be shown to the player.
+
 ## Common mistakes
 
 - ❌ Hardcoding Chinese gameplay narrative — it comes from the server (R1 etc.). Only static chrome labels live in components.

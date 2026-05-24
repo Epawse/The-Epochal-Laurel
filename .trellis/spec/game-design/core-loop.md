@@ -220,6 +220,98 @@ These are the high-impact moments that need dedicated visual treatment (not just
 
 ---
 
+## Roguelike Systems (This Iteration)
+
+The following systems layer on top of the existing loop. They do not replace the
+seasonal action → exam → inheritance structure; they enrich it with build variety,
+meaningful non-study choices, and visible randomness.
+
+### Relic Draft (3-choose-1)
+
+Triggered by: action-specific drop chance, event rewards, exam milestones, merchant shop.
+
+When triggered, the engine draws 3 relics from the current pool (seeded RNG, no
+repeats within a generation) and presents them to the player. Player picks 1; the
+other 2 are discarded. Relics are per-life (lost at death) except heirloom-eligible
+ones which can be carried over at inheritance.
+
+**Relic pool composition**: common (60%), rare (30%), legendary (10%). Pool is
+era-scoped (some relics only appear in certain eras). The seeded RNG ensures the
+same seed produces the same draft sequence.
+
+### Merchant Shop (钱庄)
+
+Available when `wealth ≥ 15`. Accessed as a special action variant of Earn (or a
+dedicated UI panel). Presents 3 relics for purchase (costs wealth). Stock refreshes
+each exam cycle (12 seasons). Gives the Earn action a concrete exam-relevant payoff.
+
+### Dice Resolution (Events & Scheme/Social)
+
+Events with a `check` field resolve via the dice primitive (see balance.md > Dice
+Primitive). The player sees: roll result, modifier, DC, and outcome tier. Choices
+without a `check` field use the legacy fixed `stat_changes` (back-compat).
+
+Scheme exposure and social interaction outcomes also route through dice checks,
+replacing the old flat probability. This makes Fortune and dice-modifier relics/skills
+mechanically relevant.
+
+### Skills (Passive + Active)
+
+Skills are visible in the character panel. Passive skills are always-on. Active skills
+show a "use" button when available (not on cooldown, cost affordable). Using an active
+skill consumes its cost and sets its cooldown. Active skills can be used:
+- During the action phase (before selecting an action) — affects that season
+- During exam preparation (before answering) — affects that exam
+
+### World Modifiers
+
+Displayed at era start and visible in the world panel. One modifier per era (30%
+chance). Affects the entire era until the next transition. Players should factor
+world modifiers into their strategy (e.g., 世道艰难 makes scheme riskier).
+
+### Mourning & Catastrophe
+
+**Mourning**: When triggered by a parent-death event, a modal announces the mourning
+period. The modifier blocks socialize/scheme for 12 turns. If 夺情特许 is active, a
+choice is offered: observe mourning (gain Fortune +10) or invoke the blessing (skip it).
+
+**Catastrophe**: Severe misfortune events (flood/war/plague) trigger immediately.
+After the stat penalty, a relic draft is offered (the "silver lining" — a rare
+survival-themed relic).
+
+### Roll-able Starts (Generation 1)
+
+Character creation flow becomes:
+1. Choose family name
+2. Choose origin
+3. See randomized starting package (stats + bonus relic + bonus skill + seed)
+4. Accept or Reroll (re-seeds)
+5. Begin play
+
+The seed is displayed and can be shared. Entering a seed at creation reproduces
+the exact same starting package + run RNG sequence.
+
+### Exam Performance Roll
+
+After the player submits their exam answer (fixed choice or free text), the engine:
+1. Calculates the multi-dimensional score
+2. Rolls the performance die (d20 + modifier)
+3. Applies variance to the score
+4. Shows the player: base score → performance roll → final score → pass/fail
+
+This creates a visible "luck moment" at the exam climax without making the exam
+purely luck-based (the formula still dominates).
+
+### Inheritance: Heirloom Selection
+
+Added step in the inheritance flow (after heir selection, before blessing spending):
+- If the dying character has any `heirloom_eligible` relics, the player picks ≤1 to
+  pass to the heir
+- The chosen relic appears in the new character's `relics` at generation start
+- Non-heirloom relics are lost
+
+---
+
 ## Design Decisions
 
 ### Gender

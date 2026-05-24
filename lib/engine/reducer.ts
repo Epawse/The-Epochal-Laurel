@@ -357,6 +357,12 @@ export interface InheritanceResolution {
   newEra: string | null;
 }
 
+export interface HeirData {
+  name: string;
+  traits: string[];
+  starting_bonus: { stat: "erudition" | "fortune" | "drive"; value: number };
+}
+
 /**
  * Resolve inheritance: calculate legacy, create new character, check era transition.
  */
@@ -364,7 +370,8 @@ export function resolveInheritance(
   state: GameState,
   heirIndex: number,
   purchasedBlessings: string[],
-  rng: Rng
+  rng: Rng,
+  heirData?: HeirData
 ): InheritanceResolution {
   const newState = structuredClone(state) as GameState;
   const oldCharacter = newState.character;
@@ -427,11 +434,17 @@ export function resolveInheritance(
     years_lived: `${oldCharacter.age} years`,
   });
 
-  // 9. Create new character
+  // 9. Apply heir starting bonus to stats
+  if (heirData?.starting_bonus) {
+    const { stat, value } = heirData.starting_bonus;
+    finalStats[stat] = Math.min(100, finalStats[stat] + value);
+  }
+
+  // 10. Create new character
   const newGeneration = oldCharacter.generation + 1;
   newState.character = {
     id: `gen_${newGeneration}_${rng.nextInt(1000, 9999)}`,
-    name: `${newState.dynasty.family_name}氏第${newGeneration}代`,
+    name: heirData?.name ?? `${newState.dynasty.family_name}氏第${newGeneration}代`,
     generation: newGeneration,
     age: 16,
     max_age: newMaxAge,
@@ -443,7 +456,7 @@ export function resolveInheritance(
     exam_history: [],
     relationships: [],
     inventory: [],
-    traits: [originDef.trait],
+    traits: heirData?.traits ?? [originDef.trait],
     status_effects: [],
     family: { spouse: null, children: [] },
   };

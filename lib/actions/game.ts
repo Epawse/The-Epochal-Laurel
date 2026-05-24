@@ -918,30 +918,23 @@ export interface ChooseHeirResult {
   newEra: string | null;
 }
 
+export interface HeirInput {
+  name: string;
+  traits: string[];
+  starting_bonus: { stat: "erudition" | "fortune" | "drive"; value: number };
+}
+
 export async function chooseHeir(
   saveId: string,
   heirIndex: number,
-  purchasedBlessingIds: string[]
+  purchasedBlessingIds: string[],
+  heirInput?: HeirInput
 ): Promise<ChooseHeirResult> {
   const currentState = await loadSave(saveId);
   if (!currentState) throw new Error("save_not_found");
   const rng = createRng(currentState.rng_seed);
 
-  // Use the engine's resolveInheritance which handles:
-  // - Legacy token calculation
-  // - Generation decay
-  // - Blessing bonuses
-  // - Heir starting stats
-  // - Origin options
-  // - Max age roll
-  // - Ancestor archival
-  // - New character creation
-  // - Dynasty update
-  // - Era transition check
-  // - Court whims reset
-  // - Auxiliary tools reset
-  // - Exam schedule reset
-  const result = resolveInheritance(currentState, heirIndex, purchasedBlessingIds, rng);
+  const result = resolveInheritance(currentState, heirIndex, purchasedBlessingIds, rng, heirInput);
 
   // Handle NPC era-change rules
   if (result.eraTransitioned) {

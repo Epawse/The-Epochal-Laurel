@@ -132,10 +132,16 @@ export default function InheritPage() {
     startTransition(async () => {
       const currentSaveId = getSaveId();
       if (!currentSaveId) return;
+      const selectedHeirData = heirs[selectedHeir];
       const result = await chooseHeir(
         currentSaveId,
         selectedHeir,
-        Array.from(purchasedBlessings)
+        Array.from(purchasedBlessings),
+        selectedHeirData ? {
+          name: selectedHeirData.name,
+          traits: selectedHeirData.traits,
+          starting_bonus: selectedHeirData.starting_bonus,
+        } : undefined
       );
 
       if (result.eraTransitioned && result.newEra) {

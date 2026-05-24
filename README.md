@@ -2,6 +2,17 @@
 
 AI 驱动的世代科举模拟游戏。玩家扮演一个家族，历经数代人参加科举考试、经营人脉、应对朝堂风云，追求百世流芳。
 
+## 游戏截图
+
+| | |
+|:---:|:---:|
+| ![首页](docs/screenshots/01-landing.png) | ![游戏主界面](docs/screenshots/02-gameplay.png) |
+| 首页 | 游戏主界面 |
+| ![随机事件](docs/screenshots/03-event.png) | ![行动选择](docs/screenshots/04-action.png) |
+| 随机事件 | 行动选择 |
+| ![完整 UI](docs/screenshots/05-full-ui.png) | ![结算](docs/screenshots/06-result.png) |
+| 完整 UI | 结算 |
+
 ## 核心玩法
 
 - **世代传承** — 每一代角色有独立的属性（学识、气运、意志、财富），死亡后由后代继承家族遗产

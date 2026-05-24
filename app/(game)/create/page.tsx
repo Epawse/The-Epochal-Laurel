@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { TopBar } from "@/components/game/TopBar";
 import { ErrorToast } from "@/components/ui/ErrorToast";
 import { ORIGINS, type Origin, type OriginDef } from "@/lib/game/constants";
+import { formatStatLabel, ORIGIN_FLAVORS } from "@/lib/game/display";
 import { newGame } from "@/lib/actions/game";
 import { setSaveId } from "@/lib/client/saveId";
+import { setSessionJSON } from "@/hooks/useSessionJSON";
 
 const originList = Object.values(ORIGINS);
 
@@ -31,7 +33,7 @@ function OriginCard({
           : "border-hairline hover:-translate-y-0.5 hover:border-gold-dim hover:bg-paper-2"
       }`}
       aria-pressed={selected}
-      aria-label={`${origin.label} - ${origin.labelEn}`}
+      aria-label={`选择出身：${origin.label}`}
     >
       {/* Selected corner triangle */}
       {selected && (
@@ -57,7 +59,7 @@ function OriginCard({
 
       {/* Flavor */}
       <p className="font-serif text-[13px] text-bone-dim leading-relaxed tracking-[0.04em] flex-1">
-        {origin.flavor}
+        {ORIGIN_FLAVORS[origin.id] ?? origin.flavor}
       </p>
 
       {/* Stat pills */}
@@ -74,7 +76,7 @@ function OriginCard({
                   : "text-jade border-hairline"
               }`}
             >
-              {stat.slice(0, 3)} {val > 0 ? "+" : ""}
+              {formatStatLabel(stat)} {val > 0 ? "+" : ""}
               {val}
             </span>
           );
@@ -84,7 +86,7 @@ function OriginCard({
       {/* Trait */}
       <div className="flex items-baseline gap-1.5 font-serif text-[13px] text-bone tracking-[0.04em]">
         <span className="font-mono text-[9.5px] text-vermillion tracking-[0.18em] uppercase">
-          TRAIT
+          特质
         </span>
         {origin.trait}
       </div>
@@ -110,7 +112,7 @@ export default function CreatePage() {
       try {
         const { id, state } = await newGame(familyName || "张", selectedOrigin);
         setSaveId(id);
-        sessionStorage.setItem("game_state", JSON.stringify(state));
+        setSessionJSON("game_state", state);
         router.push("/play");
       } catch (e) {
         console.warn("Failed to create a new game:", e);
@@ -170,7 +172,7 @@ export default function CreatePage() {
           {/* Family name input */}
           <div className="flex items-center gap-3.5">
             <span className="font-mono text-[10px] tracking-[0.22em] text-bone-mute uppercase">
-              FAMILY
+              姓氏
             </span>
             <input
               type="text"
@@ -179,7 +181,7 @@ export default function CreatePage() {
               placeholder="姓"
               maxLength={4}
               className="flex-1 bg-[rgba(15,12,8,0.5)] border border-hairline px-3.5 py-2.5 font-calli text-[30px] text-gold-glow tracking-[0.16em] text-center outline-none transition-colors duration-200 focus:border-gold placeholder:text-bone-mute placeholder:text-xl"
-              aria-label="Family name"
+              aria-label="家族姓氏"
             />
             <span className="font-serif text-base text-bone-dim tracking-[0.16em]">
               氏
@@ -189,7 +191,7 @@ export default function CreatePage() {
           {/* Seal summary */}
           <div className="border border-dashed border-hairline p-3 flex flex-col gap-1">
             <dt className="font-mono text-[10px] tracking-[0.22em] text-bone-mute uppercase">
-              ORIGIN
+              出身
             </dt>
             <dd className="m-0 font-serif text-[15px] text-bone tracking-[0.08em]">
               {selectedDef ? (
@@ -209,8 +211,8 @@ export default function CreatePage() {
           {/* Title */}
           <h1 className="font-calli text-[34px] md:text-[44px] text-gold-glow tracking-[0.16em] md:tracking-[0.28em] m-0">
             择身出世
-            <span className="block font-latin-serif italic text-base text-bone-mute tracking-[0.06em] mt-1">
-              Choose Your Origin
+            <span className="block font-serif text-base text-bone-mute tracking-[0.08em] mt-1">
+              家族第一笔命数
             </span>
           </h1>
 
@@ -243,7 +245,7 @@ export default function CreatePage() {
               disabled={!canConfirm}
               onClick={handleConfirm}
               className="px-6 md:px-8 py-3 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-base md:text-lg tracking-[0.2em] md:tracking-[0.32em] transition-all duration-200 shadow-[0_4px_16px_rgba(196,57,44,0.2),inset_0_0_0_1px_rgba(232,200,121,0.2)] hover:brightness-108 hover:-translate-y-px disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:shadow-none disabled:cursor-not-allowed disabled:translate-y-0 disabled:brightness-100"
-              aria-label="Confirm origin selection and begin"
+              aria-label="确认出身并开始"
             >
               {isPending ? "命运开启中..." : "入世求名"}
             </button>

@@ -18,6 +18,14 @@ not the durable source of truth. Read JSON handoff payloads through
 Action returns. Future DB/save-id persistence should change that hook boundary
 or the route handoff layer, not every page component.
 
+Write JSON handoff payloads through `setSessionJSON(key, value)` and remove them
+through `removeSessionJSON(key)`, both exported by `hooks/useSessionJSON.ts`.
+Do not call `sessionStorage.setItem/removeItem` directly from pages: same-tab
+storage writes do not fire the browser `storage` event, so `useSessionJSON`
+subscribers can remain stuck on the previous snapshot. Route pages may derive
+their current display state as `localState ?? useSessionJSON(...)`; avoid
+render-phase `setState` to copy the handoff into component state.
+
 ## Zustand scope
 
 `useUiStore` holds only ephemeral UI:

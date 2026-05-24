@@ -166,6 +166,39 @@ describe("balance", () => {
 
       expect(changesHigh.erudition).toBeLessThan(changesLow.erudition);
     });
+
+    it("resolves negative action ranges without throwing", () => {
+      const rng = createRng(42);
+      const schemeAction = ACTIONS.find((a) => a.id === "scheme")!;
+      const stats = { erudition: 30, fortune: 30, drive: 80, wealth: 20 };
+
+      const changes = applyActionEffects(schemeAction, stats, rng);
+
+      expect(changes.wealth).toBeLessThanOrEqual(-3);
+      expect(changes.wealth).toBeGreaterThanOrEqual(-5);
+    });
+
+    it("normalizes reversed ranges defensively", () => {
+      const rng = createRng(42);
+      const reversedAction = {
+        id: "test",
+        label: "测试",
+        labelEn: "Test",
+        notes: "",
+        effects: {
+          erudition: [0, 0] as [number, number],
+          fortune: [0, 0] as [number, number],
+          drive: [0, 0] as [number, number],
+          wealth: [-3, -5] as [number, number],
+        },
+      };
+      const stats = { erudition: 30, fortune: 30, drive: 80, wealth: 20 };
+
+      const changes = applyActionEffects(reversedAction, stats, rng);
+
+      expect(changes.wealth).toBeLessThanOrEqual(-3);
+      expect(changes.wealth).toBeGreaterThanOrEqual(-5);
+    });
   });
 
   describe("clampStats", () => {

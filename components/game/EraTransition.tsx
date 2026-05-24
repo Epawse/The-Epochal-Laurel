@@ -74,7 +74,7 @@ export function EraTransition({ fromEra, toEra, onContinue }: EraTransitionProps
       >
         {/* Label */}
         <span className="font-mono text-[11px] tracking-[0.3em] text-vermillion uppercase">
-          ERA TRANSITION
+          世道更替
         </span>
 
         {/* Title */}

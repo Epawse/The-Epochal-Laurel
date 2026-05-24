@@ -11,15 +11,9 @@ import type { GameState } from "@/lib/game/schema";
 import type { ExamLevel } from "@/lib/game/constants";
 import type { E1ExamQuestion } from "@/lib/ai/schema";
 import type { ExamResult, ToolResult } from "@/lib/actions/game";
-import { useSessionJSON } from "@/hooks/useSessionJSON";
+import { EXAM_LEVEL_LABELS } from "@/lib/game/display";
+import { setSessionJSON, useSessionJSON } from "@/hooks/useSessionJSON";
 import { getSaveId } from "@/lib/client/saveId";
-
-const EXAM_LEVEL_LABELS: Record<string, string> = {
-  county: "童试",
-  provincial: "乡试",
-  metropolitan: "会试",
-  palace: "殿试",
-};
 
 export default function ExamPage() {
   const router = useRouter();
@@ -95,8 +89,8 @@ export default function ExamPage() {
             freeText.trim() || null,
             cheatSheetActive
           );
-          sessionStorage.setItem("palace_result", JSON.stringify(palaceResult));
-          sessionStorage.setItem("game_state", JSON.stringify(palaceResult.state));
+          setSessionJSON("palace_result", palaceResult);
+          setSessionJSON("game_state", palaceResult.state);
           router.push("/palace");
         } else {
           const result = await submitExamAnswer(
@@ -109,7 +103,7 @@ export default function ExamPage() {
           );
           setExamResult(result);
           setGameState(result.state);
-          sessionStorage.setItem("game_state", JSON.stringify(result.state));
+          setSessionJSON("game_state", result.state);
         }
       } catch (e) {
         console.warn("Failed to submit exam:", e);
@@ -141,7 +135,7 @@ export default function ExamPage() {
 
     setToolMessage(result.message);
     setGameState(result.state);
-    sessionStorage.setItem("game_state", JSON.stringify(result.state));
+    setSessionJSON("game_state", result.state);
 
     if (toolId === "cheat_sheet" && result.success) {
       setCheatSheetActive(true);
@@ -213,7 +207,7 @@ export default function ExamPage() {
           {/* Header */}
           <div className="mb-6">
             <span className="font-mono text-[9px] tracking-[0.18em] text-vermillion uppercase block mb-1">
-              IMPERIAL EXAMINATION
+              科举考场
             </span>
             <h1 className="font-calli text-[32px] md:text-[38px] text-gold-glow tracking-[0.12em] md:tracking-[0.18em] leading-tight">
               {EXAM_LEVEL_LABELS[examLevel]}

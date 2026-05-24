@@ -49,13 +49,13 @@ export default function LeaderboardPage() {
       {/* Header */}
       <header className="text-center">
         <span className="font-mono text-[10px] tracking-[0.3em] text-vermillion uppercase block mb-2">
-          HALL OF FAME
+          流芳名录
         </span>
         <h1 className="font-calli text-[38px] text-gold-glow tracking-[0.22em]">
           百世流芳榜
         </h1>
-        <p className="font-latin-serif italic text-sm text-bone-mute tracking-[0.08em] mt-1">
-          Hall of Fame
+        <p className="font-serif text-sm text-bone-mute tracking-[0.08em] mt-1">
+          一门功名，万世留名
         </p>
       </header>
 
@@ -90,7 +90,7 @@ export default function LeaderboardPage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mt-2">
                 <div>
                   <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase block">
-                    HIGHEST TITLE
+                    最高功名
                   </span>
                   <span className="font-serif text-base text-gold tracking-[0.06em]">
                     {dynastySummary.highestTitle}
@@ -98,7 +98,7 @@ export default function LeaderboardPage() {
                 </div>
                 <div>
                   <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase block">
-                    GENERATIONS
+                    传承世代
                   </span>
                   <span className="font-serif text-base text-bone tracking-[0.06em]">
                     {dynastySummary.generations}世
@@ -106,7 +106,7 @@ export default function LeaderboardPage() {
                 </div>
                 <div>
                   <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase block">
-                    SCORE
+                    总分
                   </span>
                   <span className="font-mono text-base text-gold-glow tracking-[0.06em]">
                     {dynastySummary.score}
@@ -125,7 +125,7 @@ export default function LeaderboardPage() {
       {/* Leaderboard Table */}
       <section>
         <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-4">
-          TOP DYNASTIES
+          名门排行
         </span>
 
         {isLoading ? (
@@ -138,7 +138,7 @@ export default function LeaderboardPage() {
               {error}
             </p>
             <p className="font-mono text-[10px] text-bone-mute tracking-[0.08em] mt-2">
-              Leaderboard data unavailable
+              榜单数据暂不可用
             </p>
           </div>
         ) : entries.length === 0 ? (
@@ -147,7 +147,7 @@ export default function LeaderboardPage() {
               尚无英杰登榜
             </p>
             <p className="font-mono text-[10px] text-bone-mute tracking-[0.08em] mt-2">
-              No entries yet
+              静待第一门登榜
             </p>
           </div>
         ) : (
@@ -155,22 +155,22 @@ export default function LeaderboardPage() {
             {/* Table header */}
             <div className="grid min-w-[680px] grid-cols-[60px_1fr_60px_100px_80px_80px] gap-2 px-4 py-2.5 border-b border-hairline bg-paper-2">
               <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase">
-                RANK
+                排名
               </span>
               <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase">
-                FAMILY
+                家族
               </span>
               <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase text-center">
-                TIER
+                等第
               </span>
               <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase">
-                TITLE
+                功名
               </span>
               <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase text-center">
-                GEN
+                世代
               </span>
               <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase text-right">
-                SCORE
+                总分
               </span>
             </div>
 
@@ -217,7 +217,7 @@ export default function LeaderboardPage() {
                     </span>
                     {isPlayer && (
                       <span className="ml-2 px-1.5 py-0.5 bg-vermillion/20 border border-vermillion/40 font-mono text-[8px] text-vermillion tracking-[0.12em] uppercase">
-                        YOU
+                        本家
                       </span>
                     )}
                   </div>

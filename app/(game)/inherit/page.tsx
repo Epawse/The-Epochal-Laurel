@@ -10,7 +10,8 @@ import type { LegacyTokens } from "@/lib/engine/inheritance";
 import { chooseHeir, type InheritanceTrigger } from "@/lib/actions/game";
 import { EraTransition } from "@/components/game/EraTransition";
 import { ErrorToast } from "@/components/ui/ErrorToast";
-import { useSessionJSON } from "@/hooks/useSessionJSON";
+import { ERA_LABELS, formatStatLabel } from "@/lib/game/display";
+import { removeSessionJSON, setSessionJSON, useSessionJSON } from "@/hooks/useSessionJSON";
 import { getSaveId } from "@/lib/client/saveId";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -31,13 +32,6 @@ function getPortraitSrc(age: number): string {
   if (age >= 35) return "/assets/scholar-middle.png";
   return "/assets/scholar-young.png";
 }
-
-const ERA_LABELS: Record<Era, string> = {
-  prosperity: "盛世",
-  decline: "衰世",
-  invasion: "乱世",
-  restoration: "中兴",
-};
 
 const BLESSING_EFFECT_LABELS: Record<string, string> = {
   "starting_erudition_+20": "起始学识 +20",
@@ -156,8 +150,8 @@ export default function InheritPage() {
           });
         } else {
           // No era transition, go directly to play
-          sessionStorage.setItem("game_state", JSON.stringify(result.state));
-          sessionStorage.removeItem("inheritance_data");
+          setSessionJSON("game_state", result.state);
+          removeSessionJSON("inheritance_data");
           router.push("/play");
         }
       } catch (e) {
@@ -169,8 +163,8 @@ export default function InheritPage() {
 
   function handleEraTransitionContinue() {
     if (newState) {
-      sessionStorage.setItem("game_state", JSON.stringify(newState));
-      sessionStorage.removeItem("inheritance_data");
+      setSessionJSON("game_state", newState);
+      removeSessionJSON("inheritance_data");
       router.push("/play");
     }
   }
@@ -199,7 +193,7 @@ export default function InheritPage() {
       {/* Header */}
       <header className="text-center">
         <span className="font-mono text-[10px] tracking-[0.3em] text-vermillion uppercase block mb-2">
-          INHERITANCE
+          家业传承
         </span>
         <h1 className="font-calli text-[44px] text-gold-glow tracking-[0.18em]">
           薪火相传
@@ -212,7 +206,7 @@ export default function InheritPage() {
       {/* Ancestor Card */}
       <section className="border border-hairline bg-paper-1 p-4 md:p-6">
         <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-4">
-          ANCESTOR
+          先人事略
         </span>
         <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] lg:grid-cols-[180px_1fr] gap-4 md:gap-6">
           {/* Portrait */}
@@ -233,7 +227,7 @@ export default function InheritPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase block">
-                  LIFESPAN
+                  享年
                 </span>
                 <span className="font-serif text-base text-bone tracking-[0.06em]">
                   享年{character.age}岁
@@ -241,7 +235,7 @@ export default function InheritPage() {
               </div>
               <div>
                 <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase block">
-                  HIGHEST TITLE
+                  最高功名
                 </span>
                 <span className="font-serif text-base text-bone tracking-[0.06em]">
                   {character.titles[character.titles.length - 1] ?? "白身"}
@@ -249,7 +243,7 @@ export default function InheritPage() {
               </div>
               <div>
                 <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase block">
-                  CAUSE
+                  缘由
                 </span>
                 <span className="font-serif text-base text-bone tracking-[0.06em]">
                   {INHERITANCE_REASON_LABELS[deathReason]}
@@ -257,7 +251,7 @@ export default function InheritPage() {
               </div>
               <div>
                 <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase block">
-                  GENERATION
+                  世代
                 </span>
                 <span className="font-serif text-base text-bone tracking-[0.06em]">
                   第{character.generation}世
@@ -269,19 +263,19 @@ export default function InheritPage() {
             <div className="mt-2 pt-3 border-t border-dashed border-hairline">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div className="text-center">
-                  <span className="font-mono text-[9px] text-bone-mute block">ERU</span>
+                  <span className="font-mono text-[9px] text-bone-mute block">{formatStatLabel("erudition")}</span>
                   <span className="font-serif text-sm text-bone">{character.stats.erudition}</span>
                 </div>
                 <div className="text-center">
-                  <span className="font-mono text-[9px] text-bone-mute block">FOR</span>
+                  <span className="font-mono text-[9px] text-bone-mute block">{formatStatLabel("fortune")}</span>
                   <span className="font-serif text-sm text-bone">{character.stats.fortune}</span>
                 </div>
                 <div className="text-center">
-                  <span className="font-mono text-[9px] text-bone-mute block">DRV</span>
+                  <span className="font-mono text-[9px] text-bone-mute block">{formatStatLabel("drive")}</span>
                   <span className="font-serif text-sm text-bone">{character.stats.drive}</span>
                 </div>
                 <div className="text-center">
-                  <span className="font-mono text-[9px] text-bone-mute block">WLT</span>
+                  <span className="font-mono text-[9px] text-bone-mute block">{formatStatLabel("wealth")}</span>
                   <span className="font-serif text-sm text-bone">{character.stats.wealth}</span>
                 </div>
               </div>
@@ -293,7 +287,7 @@ export default function InheritPage() {
       {/* Legacy Tokens */}
       <section>
         <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-3">
-          LEGACY TOKENS
+          家族遗泽
         </span>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <TokenCard label="藏书" value={legacyTokens.books} note="学识传承" />
@@ -306,7 +300,7 @@ export default function InheritPage() {
       {/* Heir Candidates */}
       <section>
         <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-3">
-          {isAdoption ? "ADOPTED HEIR" : "HEIR CANDIDATES"}
+          {isAdoption ? "过继嗣子" : "继承人"}
         </span>
         <div className={`grid gap-4 ${heirs.length === 1 ? "grid-cols-1 max-w-[400px]" : heirs.length === 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 md:grid-cols-3"}`}>
           {heirs.map((heir, index) => (
@@ -325,7 +319,7 @@ export default function InheritPage() {
       {/* Blessings */}
       <section>
         <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-3">
-          ANCESTRAL BLESSINGS
+          祖荫祝福
         </span>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {BLESSINGS.map((blessing) => (

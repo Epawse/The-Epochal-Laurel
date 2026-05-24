@@ -11,11 +11,12 @@ import { EventModal } from "@/components/game/EventModal";
 import { SchemeExposureOverlay } from "@/components/game/SchemeExposureOverlay";
 import { ErrorToast } from "@/components/ui/ErrorToast";
 import { ACTIONS, highestTitleOf, EXAM_REQUIREMENTS, type ExamLevel } from "@/lib/game/constants";
+import { ERA_LABELS } from "@/lib/game/display";
 import type { GameState, StatChanges } from "@/lib/game/schema";
 import { advanceTurn, submitEventChoice, submitEventFreeInput, generateHeirsAction } from "@/lib/actions/game";
 import { recordScore } from "@/lib/actions/leaderboard";
 import { calculateScore } from "@/lib/game/scoring";
-import { useSessionJSON } from "@/hooks/useSessionJSON";
+import { removeSessionJSON, setSessionJSON, useSessionJSON } from "@/hooks/useSessionJSON";
 import { getSaveId } from "@/lib/client/saveId";
 
 const ACTION_ICONS: Record<string, string> = {
@@ -31,13 +32,6 @@ const SEASON_LABELS: Record<string, string> = {
   summer: "夏",
   autumn: "秋",
   winter: "冬",
-};
-
-const ERA_LABELS: Record<string, string> = {
-  prosperity: "盛世",
-  decline: "衰世",
-  invasion: "乱世",
-  restoration: "中兴",
 };
 
 function getPortraitSrc(age: number): string {
@@ -63,11 +57,13 @@ function getExamStatus(
     { level: "county", label: "童试", seasons: examSchedule.next_county },
     { level: "provincial", label: "乡试", seasons: examSchedule.next_provincial },
     { level: "metropolitan", label: "会试", seasons: examSchedule.next_metropolitan },
+    { level: "palace", label: "殿试", seasons: 0 },
   ];
 
   // Find the highest exam level the player qualifies for by title progression
   let target = levels[0];
-  if (titles.includes("举人")) target = levels[2];
+  if (titles.includes("贡士")) target = levels[3];
+  else if (titles.includes("举人")) target = levels[2];
   else if (titles.includes("秀才")) target = levels[1];
 
   // Check for exam ban
@@ -90,7 +86,6 @@ export default function PlayPage() {
   const persisted = useSessionJSON<GameState>("game_state");
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [saveId] = useState<string | null>(() => getSaveId());
-  const [synced, setSynced] = useState(false);
   const [deltas, setDeltas] = useState<Partial<StatChanges>>({});
   const [narration, setNarration] = useState(
     "新的一天开始了。准备好踏上科举之路吧。"
@@ -98,20 +93,16 @@ export default function PlayPage() {
   const [isPending, startTransition] = useTransition();
   const [schemeExposed, setSchemeExposed] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  if (!synced && persisted !== null) {
-    setSynced(true);
-    setGameState(persisted);
-  }
+  const currentGameState = gameState ?? persisted;
 
   useEffect(() => {
     if (gameState) {
-      sessionStorage.setItem("game_state", JSON.stringify(gameState));
+      setSessionJSON("game_state", gameState);
     }
   }, [gameState]);
 
   // If no game state, show loading/redirect message
-  if (!gameState) {
+  if (!currentGameState) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4">
         <p className="font-serif text-lg text-bone-mute tracking-[0.18em]">
@@ -127,16 +118,16 @@ export default function PlayPage() {
     );
   }
 
-  const { character, world, dynasty } = gameState;
+  const { character, world, dynasty } = currentGameState;
   const highestTitle = highestTitleOf(character.titles);
   const portraitSrc = getPortraitSrc(character.age);
   const isDanger = character.stats.drive <= 25;
   const nextExam = getExamStatus(world.exam_schedule, character.titles, character.stats.erudition, character.status_effects);
   const isInvasion = world.era === "invasion";
-  const hasEvent = gameState.current_event !== null;
+  const hasEvent = currentGameState.current_event !== null;
 
   function handleAction(actionId: string) {
-    if (!gameState || !saveId || isPending) return;
+    if (!currentGameState || !saveId || isPending) return;
 
     startTransition(async () => {
       setError(null);
@@ -178,30 +169,30 @@ export default function PlayPage() {
               await recordScore(dyn.family_name, tier, highTitle, dyn.total_generations, score);
 
               // Set dynasty summary for leaderboard display
-              sessionStorage.setItem("dynasty_summary", JSON.stringify({
+              setSessionJSON("dynasty_summary", {
                 familyName: dyn.family_name,
                 tier,
                 highestTitle: highTitle,
                 generations: dyn.total_generations,
                 score,
-              }));
+              });
 
               // Clear the game save
-              sessionStorage.removeItem("game_state");
+              removeSessionJSON("game_state");
 
               router.push("/leaderboard");
               return;
             }
 
             // Store inheritance data and navigate to inherit page
-            sessionStorage.setItem("inheritance_data", JSON.stringify({
+            setSessionJSON("inheritance_data", {
               state: result.state,
               heirs: heirsResult.heirs,
               legacyTokens: heirsResult.legacyTokens,
               blessingPoints: heirsResult.blessingPoints,
               isAdoption: heirsResult.isAdoption,
               deathReason: heirsResult.deathReason,
-            }));
+            });
             router.push("/inherit");
           }, 1500);
         }
@@ -213,12 +204,12 @@ export default function PlayPage() {
   }
 
   function handleEventChoice(choiceId: string) {
-    if (!gameState || isPending) return;
+    if (!currentGameState || !saveId || isPending) return;
 
     startTransition(async () => {
       setError(null);
       try {
-        const result = await submitEventChoice(saveId!, choiceId);
+        const result = await submitEventChoice(saveId, choiceId);
         setGameState(result.state);
         setNarration(result.narration);
       } catch (e) {
@@ -229,12 +220,12 @@ export default function PlayPage() {
   }
 
   function handleEventFreeInput(text: string) {
-    if (!gameState || isPending) return;
+    if (!currentGameState || !saveId || isPending) return;
 
     startTransition(async () => {
       setError(null);
       try {
-        const result = await submitEventFreeInput(saveId!, text);
+        const result = await submitEventFreeInput(saveId, text);
         setGameState(result.state);
         setNarration(result.narration);
       } catch (e) {
@@ -302,7 +293,7 @@ export default function PlayPage() {
           {/* Counter-Fate Tools (display only) */}
           <div className="border border-dashed border-hairline p-3 opacity-50 hidden md:block">
             <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-2">
-              TOOLS
+              辅助
             </span>
             <div className="flex flex-col gap-1.5 font-serif text-xs text-bone-mute tracking-[0.04em]">
               <span>小抄/夹带</span>
@@ -339,7 +330,7 @@ export default function PlayPage() {
           {/* Title display */}
           <div className="border border-hairline p-4 bg-paper-1">
             <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-2">
-              TITLE
+              功名
             </span>
             <span className="font-calli text-[28px] text-gold-glow tracking-[0.22em]">
               {highestTitle}
@@ -352,7 +343,7 @@ export default function PlayPage() {
           {/* Exam countdown */}
           <div className="border border-hairline p-4 bg-paper-1">
             <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-2">
-              NEXT EXAM
+              下场科试
             </span>
             <div className="flex items-baseline gap-2">
               <span className="font-serif text-base text-bone tracking-[0.08em]">
@@ -376,7 +367,7 @@ export default function PlayPage() {
           {/* Era display */}
           <div className="border border-hairline p-4 bg-paper-1">
             <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-2">
-              ERA
+              世道
             </span>
             <span className="font-serif text-base text-bone tracking-[0.12em]">
               {ERA_LABELS[world.era]}
@@ -389,15 +380,15 @@ export default function PlayPage() {
           {/* Court hints */}
           <div className="border border-hairline p-4 bg-paper-1 flex flex-col gap-3">
             <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block">
-              COURT WHIMS
+              圣意风向
             </span>
             <CourtHint
-              label="STYLE"
+              label="文风"
               state={world.court_whims_revealed.style_known ? "full" : "hidden"}
               value={world.court_whims.style}
             />
             <CourtHint
-              label="TEMPER"
+              label="性情"
               state={world.court_whims_revealed.temperament_known}
               value={world.court_whims.emperor_temperament}
               eliminated={world.court_whims_revealed.temperament_eliminated}
@@ -410,9 +401,9 @@ export default function PlayPage() {
       {schemeExposed && <SchemeExposureOverlay />}
 
       {/* Event Modal Overlay */}
-      {hasEvent && gameState.current_event && (
+      {hasEvent && currentGameState.current_event && (
         <EventModal
-          event={gameState.current_event}
+          event={currentGameState.current_event}
           onChoice={handleEventChoice}
           onFreeInput={handleEventFreeInput}
           onClose={handleEventClose}

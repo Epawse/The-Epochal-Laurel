@@ -53,9 +53,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "百世流芳 · The Epochal Laurel",
-  description:
-    "AI-native generational roguelike set in imperial China's examination system.",
+  title: "百世流芳",
+  description: "AI 世代科举模拟游戏。",
 };
 
 export default function RootLayout({

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ActionDef } from "@/lib/game/constants";
+import { ACTION_HINTS, formatStatLabel } from "@/lib/game/display";
 
 interface ActionCardProps {
   action: ActionDef;
@@ -33,13 +34,8 @@ export function ActionCard({
       }`}
       disabled={disabled || locked}
       onClick={isInteractive ? onClick : undefined}
-      aria-label={`${action.label} - ${action.labelEn}`}
+      aria-label={action.label}
     >
-      {/* Corner label */}
-      <span className="absolute top-1.5 left-1.5 font-mono text-[9px] tracking-[0.12em] text-bone-mute">
-        {action.id.toUpperCase().slice(0, 3)}
-      </span>
-
       {/* Icon medallion */}
       <div
         className={`w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden bg-paper-bone grid place-items-center border border-hairline shadow-[inset_0_0_0_1px_rgba(201,165,90,0.18)] transition-transform duration-300 ease-out ${
@@ -70,7 +66,7 @@ export function ActionCard({
 
       {/* Description */}
       <span className="text-xs text-bone-mute leading-relaxed tracking-[0.02em] min-h-[32px]">
-        {action.labelEn}
+        {ACTION_HINTS[action.id] ?? action.notes}
       </span>
 
       {/* Stat preview */}
@@ -83,7 +79,7 @@ export function ActionCard({
             const sign = avg > 0 ? "+" : "";
             return (
               <span key={stat} className={colorClass}>
-                {stat.slice(0, 3)} {sign}{min === max ? min : `${min}~${max}`}
+                {formatStatLabel(stat)} {sign}{min === max ? min : `${min}~${max}`}
               </span>
             );
           })}

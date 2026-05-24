@@ -213,7 +213,7 @@ export const ACTIONS: ActionDef[] = [
       erudition: [0, 0],
       fortune: [5, 10],
       drive: [-3, -3],
-      wealth: [-3, -5],
+      wealth: [-5, -3],
     },
     notes: "15% exposure risk",
   },

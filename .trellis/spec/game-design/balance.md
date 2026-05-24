@@ -53,9 +53,14 @@ Generation 2+ does NOT use this base — starting stats come from the Heir Start
 | Socialize (交游) | +1 | +3~5 | -1 | -1 | Requires Erudition ≥ 20 |
 | Earn (营生) | -1 | 0 | -1 | +5~10 | |
 | Rest (休养) | 0 | +1 | +5~8 | -1 | |
-| Scheme (钻营) | 0 | +5~10 | -3 | -3~5 | 15% exposure risk |
+| Scheme (钻营) | 0 | +5~10 | -3 | -5~-3 | 15% exposure risk |
 
 Ranges indicate randomness (uniform distribution within range).
+
+Implementation contract: action-effect ranges are authored as `[min, max]`,
+including negative ranges (`[-5, -3]`, not `[-3, -5]`). The engine's range
+resolver must still normalize reversed tuples defensively before calling
+`rng.nextInt(min, max)` so a bad constant cannot crash a production turn.
 
 ### Diminishing Returns Formula
 

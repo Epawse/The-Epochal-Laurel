@@ -1,3 +1,5 @@
+import { formatCourtValue } from "@/lib/game/display";
+
 interface CourtHintProps {
   label: string;
   state: "hidden" | "partial" | "full";
@@ -14,11 +16,11 @@ export function CourtHint({ label, state, value, eliminated }: CourtHintProps) {
       break;
     case "partial":
       displayText = eliminated?.length
-        ? `非${eliminated.join("非")}`
+        ? `非${eliminated.map(formatCourtValue).join("、非")}`
         : "???";
       break;
     case "full":
-      displayText = value ?? "—";
+      displayText = value ? formatCourtValue(value) : "—";
       break;
   }
 

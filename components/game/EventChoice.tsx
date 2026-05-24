@@ -1,6 +1,7 @@
 "use client";
 
 import type { CurrentEvent } from "@/lib/game/schema";
+import { formatStatLabel } from "@/lib/game/display";
 
 type EventChoiceData = CurrentEvent["choices"][number];
 
@@ -8,15 +9,17 @@ interface EventChoiceProps {
   choice: EventChoiceData;
   index: number;
   onClick: (id: string) => void;
+  disabled?: boolean;
 }
 
 const keyLabels = ["其一", "其二", "其三"];
 
-export function EventChoice({ choice, index, onClick }: EventChoiceProps) {
+export function EventChoice({ choice, index, onClick, disabled = false }: EventChoiceProps) {
   return (
     <button
       type="button"
-      className="bg-paper-2 border border-hairline p-3.5 pb-3 text-left cursor-pointer transition-all duration-200 ease-out flex flex-col gap-2 relative min-h-[132px] hover:border-gold hover:bg-paper-3 hover:-translate-y-0.5"
+      className="bg-paper-2 border border-hairline p-3.5 pb-3 text-left cursor-pointer transition-all duration-200 ease-out flex flex-col gap-2 relative min-h-[132px] hover:border-gold hover:bg-paper-3 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-wait disabled:hover:translate-y-0 disabled:hover:border-hairline disabled:hover:bg-paper-2"
+      disabled={disabled}
       onClick={() => onClick(choice.id)}
       aria-label={`${keyLabels[index]}: ${choice.label}`}
     >
@@ -38,7 +41,7 @@ export function EventChoice({ choice, index, onClick }: EventChoiceProps) {
           const sign = val > 0 ? "+" : "";
           return (
             <span key={stat} className={colorClass}>
-              {stat.slice(0, 3)} {sign}
+              {formatStatLabel(stat)} {sign}
               {val}
             </span>
           );

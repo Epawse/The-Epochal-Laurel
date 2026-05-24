@@ -1,11 +1,40 @@
 "use client";
 
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+
+const SESSION_JSON_EVENT = "epochal-laurel-session-json";
 
 function subscribe(callback: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   window.addEventListener("storage", callback);
-  return () => window.removeEventListener("storage", callback);
+  window.addEventListener(SESSION_JSON_EVENT, callback);
+  const timer = window.setTimeout(callback, 0);
+
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(SESSION_JSON_EVENT, callback);
+    window.clearTimeout(timer);
+  };
+}
+
+function notifySessionJSONChange(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(SESSION_JSON_EVENT));
+}
+
+export function setSessionJSON(key: string, value: unknown): void {
+  window.sessionStorage.setItem(key, JSON.stringify(value));
+  notifySessionJSONChange();
+}
+
+export function removeSessionJSON(key: string): void {
+  window.sessionStorage.removeItem(key);
+  notifySessionJSONChange();
+}
+
+function readSessionValue(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem(key);
 }
 
 /**
@@ -16,11 +45,21 @@ function subscribe(callback: () => void): () => void {
  * DB save-id): call sites take the returned value, not the storage mechanism.
  */
 export function useSessionJSON<T>(key: string): T | null {
-  const raw = useSyncExternalStore(
+  const storeRaw = useSyncExternalStore(
     subscribe,
-    () => (typeof window === "undefined" ? null : window.sessionStorage.getItem(key)),
+    () => readSessionValue(key),
     () => null,
   );
+  const [hydratedRaw, setHydratedRaw] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setHydratedRaw(readSessionValue(key));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [key, storeRaw]);
+
+  const raw = storeRaw ?? hydratedRaw;
 
   return useMemo(() => {
     if (raw === null) return null;

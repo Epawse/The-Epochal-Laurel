@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { formatStatLabel } from "@/lib/game/display";
 
 interface ResultOverlayProps {
   passed: boolean;
@@ -14,13 +15,6 @@ interface ResultOverlayProps {
   judgeNarrative?: string;
   onDismiss: () => void;
 }
-
-const STAT_LABELS: Record<string, string> = {
-  erudition: "学识",
-  fortune: "运势",
-  drive: "心力",
-  wealth: "银两",
-};
 
 function Confetti() {
   return (
@@ -113,7 +107,7 @@ export function ResultOverlay({
         <div className="relative p-6 md:p-10 flex flex-col justify-center">
           {/* Label */}
           <span className="font-mono text-[10px] tracking-[0.2em] text-vermillion uppercase mb-2">
-            EXAM RESULT
+            科试结果
           </span>
 
           {/* Title */}
@@ -155,7 +149,7 @@ export function ResultOverlay({
             {(Object.entries(statChanges) as [string, number][]).map(([stat, delta]) => (
               <div key={stat} className="flex flex-col items-center gap-1">
                 <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase">
-                  {STAT_LABELS[stat] ?? stat}
+                  {formatStatLabel(stat)}
                 </span>
                 <span
                   className={`font-mono text-sm tracking-[0.06em] ${

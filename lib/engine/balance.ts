@@ -53,7 +53,9 @@ export function applyActionEffects(
 }
 
 function resolveRange(range: readonly [number, number], rng: Rng): number {
-  const [min, max] = range;
+  const [a, b] = range;
+  const min = Math.min(a, b);
+  const max = Math.max(a, b);
   if (min === max) return min;
   return rng.nextInt(min, max);
 }

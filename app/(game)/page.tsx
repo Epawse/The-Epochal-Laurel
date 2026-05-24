@@ -26,15 +26,15 @@ export default function LandingPage() {
           <span className="w-7 h-7 grid place-items-center bg-vermillion text-bone font-serif text-[15px] -rotate-3 shadow-[0_0_0_2px_rgba(196,57,44,0.18)]">
             芳
           </span>
-          <span>THE EPOCHAL LAUREL</span>
+          <span>科举世家录</span>
         </div>
 
         {/* Title with ink-bloom animation */}
         <LandingTitle />
 
         {/* Subtitle */}
-        <p className="font-latin-serif italic text-[22px] text-bone-dim tracking-[0.08em] mt-1">
-          The Epochal Laurel
+        <p className="font-serif text-[22px] text-bone-dim tracking-[0.12em] mt-1">
+          一门寒窗，百代求名
         </p>
 
         {/* Ink divider */}
@@ -56,8 +56,8 @@ export default function LandingPage() {
             className="block px-7 py-3.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-lg tracking-[0.32em] text-center transition-all duration-200 hover:brightness-108 hover:-translate-y-px shadow-[0_4px_16px_rgba(196,57,44,0.22),inset_0_0_0_1px_rgba(232,200,121,0.22)]"
           >
             开创新局
-            <span className="block font-latin-serif italic text-[11px] tracking-[0.18em] text-bone/70 mt-1">
-              Begin a New Dynasty
+            <span className="block font-serif text-[11px] tracking-[0.18em] text-bone/70 mt-1">
+              新开一族
             </span>
           </Link>
 
@@ -90,7 +90,7 @@ export default function LandingPage() {
       {/* Footer */}
       <div className="absolute bottom-8 left-0 right-0 flex justify-between px-10 font-mono text-[10px] tracking-[0.18em] text-bone-mute z-[2]">
         <span>v0.1.0</span>
-        <span>AI-NATIVE ROGUELIKE</span>
+        <span>AI 世代科举</span>
       </div>
     </div>
   );

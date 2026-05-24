@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { CurrentEvent } from "@/lib/game/schema";
 import { EventChoice } from "./EventChoice";
@@ -29,10 +29,25 @@ export function EventModal({
 }: EventModalProps) {
   const [freeText, setFreeText] = useState("");
   const [showFreeInput, setShowFreeInput] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const isDisabled = disabled || submitting;
+
+  useEffect(() => {
+    if (disabled) return;
+    const timer = window.setTimeout(() => setSubmitting(false), 0);
+    return () => window.clearTimeout(timer);
+  }, [disabled]);
 
   function handleFreeSubmit() {
-    if (!freeText.trim() || disabled) return;
+    if (!freeText.trim() || isDisabled) return;
+    setSubmitting(true);
     onFreeInput(freeText.trim());
+  }
+
+  function handleChoice(choiceId: string) {
+    if (isDisabled) return;
+    setSubmitting(true);
+    onChoice(choiceId);
   }
 
   return (
@@ -88,9 +103,8 @@ export function EventModal({
                 key={choice.id}
                 choice={choice}
                 index={index}
-                onClick={(id) => {
-                  if (!disabled) onChoice(id);
-                }}
+                onClick={handleChoice}
+                disabled={isDisabled}
               />
             ))}
           </div>
@@ -103,7 +117,7 @@ export function EventModal({
                   type="button"
                   className="font-serif text-sm text-gold-dim tracking-[0.08em] hover:text-gold-glow transition-colors"
                   onClick={() => setShowFreeInput(true)}
-                  disabled={disabled}
+                  disabled={isDisabled}
                 >
                   另辟蹊径...
                 </button>
@@ -111,9 +125,9 @@ export function EventModal({
                 <div className="flex flex-col gap-3">
                   <label
                     htmlFor="free-input"
-                    className="font-mono text-[10px] tracking-[0.18em] text-bone-mute uppercase"
+                    className="font-serif text-xs tracking-[0.12em] text-bone-mute"
                   >
-                    YOUR SOLUTION
+                    自拟解法
                   </label>
                   <textarea
                     id="free-input"
@@ -121,7 +135,7 @@ export function EventModal({
                     placeholder="描述你的创意解法..."
                     value={freeText}
                     onChange={(e) => setFreeText(e.target.value)}
-                    disabled={disabled}
+                    disabled={isDisabled}
                     maxLength={500}
                   />
                   <div className="flex items-center justify-between">
@@ -132,9 +146,9 @@ export function EventModal({
                       type="button"
                       className="px-5 py-2 bg-gradient-to-b from-gold-dim to-gold-glow text-paper-0 font-serif text-sm tracking-[0.12em] transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                       onClick={handleFreeSubmit}
-                      disabled={disabled || !freeText.trim()}
+                      disabled={isDisabled || !freeText.trim()}
                     >
-                      提交
+                      {isDisabled ? "处理中..." : "提交"}
                     </button>
                   </div>
                 </div>

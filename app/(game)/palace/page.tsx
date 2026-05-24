@@ -10,7 +10,8 @@ import { calculateScore } from "@/lib/game/scoring";
 import { generateHeirsAction, type PalaceExamResult } from "@/lib/actions/game";
 import type { RankingEntry } from "@/lib/engine/exam";
 import { highestTitleOf } from "@/lib/game/constants";
-import { useSessionJSON } from "@/hooks/useSessionJSON";
+import { ERA_LABELS } from "@/lib/game/display";
+import { removeSessionJSON, setSessionJSON, useSessionJSON } from "@/hooks/useSessionJSON";
 import { getSaveId } from "@/lib/client/saveId";
 
 const TITLE_COLORS: Record<string, string> = {
@@ -74,13 +75,13 @@ export default function PalacePage() {
           transition={{ duration: 0.6 }}
         >
           <span className="font-mono text-[9px] tracking-[0.2em] text-vermillion uppercase block mb-2">
-            PALACE EXAMINATION
+            殿试放榜
           </span>
           <h1 className="font-calli text-[52px] text-gold-glow tracking-[0.22em] leading-tight">
             {"金鸾殿 · 三鼎甲"}
           </h1>
           <p className="font-mono text-[10px] text-bone-mute tracking-[0.1em] mt-2">
-            {result.state.world.year}{"年"} {"·"} {result.state.world.era === "prosperity" ? "盛世" : result.state.world.era === "decline" ? "衰世" : result.state.world.era === "invasion" ? "乱世" : "中兴"}
+            {result.state.world.year}{"年"} {"·"} {ERA_LABELS[result.state.world.era]}
           </p>
         </motion.div>
 
@@ -131,7 +132,7 @@ export default function PalacePage() {
                       </span>
                       {isPlayer && (
                         <span className="px-1.5 py-0.5 bg-vermillion/20 border border-vermillion/40 font-mono text-[8px] text-vermillion tracking-[0.12em] uppercase">
-                          {"本家 · You"}
+                          {"本家"}
                         </span>
                       )}
                     </div>
@@ -172,7 +173,7 @@ export default function PalacePage() {
 
             {/* Label */}
             <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-2">
-              IMPERIAL COMMENTARY
+              御前评语
             </span>
 
             {/* Title */}
@@ -198,7 +199,7 @@ export default function PalacePage() {
             {victoryTier && (
               <div className="mt-4 p-3 border border-gold-dim bg-[rgba(212,175,55,0.05)]">
                 <span className="font-mono text-[9px] tracking-[0.12em] text-gold-dim uppercase block mb-1">
-                  VICTORY
+                  结局
                 </span>
                 <span className="font-calli text-lg text-gold-glow tracking-[0.08em]">
                   {TIER_LABELS[victoryTier] ?? victoryTier}
@@ -232,19 +233,19 @@ export default function PalacePage() {
 
                 await recordScore(dynasty.family_name, result.victoryTier, highTitle, dynasty.total_generations, score);
 
-                sessionStorage.setItem("dynasty_summary", JSON.stringify({
+                setSessionJSON("dynasty_summary", {
                   familyName: dynasty.family_name,
                   tier: result.victoryTier,
                   highestTitle: highTitle,
                   generations: dynasty.total_generations,
                   score,
-                }));
+                });
 
                 // Clear game save on victory
-                sessionStorage.removeItem("game_state");
+                removeSessionJSON("game_state");
               }
 
-              sessionStorage.removeItem("palace_result");
+              removeSessionJSON("palace_result");
               router.push("/leaderboard");
             })}
             className="px-6 py-2.5 border border-hairline bg-paper-2 font-serif text-sm text-bone tracking-[0.12em] hover:border-gold-dim transition-colors disabled:opacity-50 disabled:cursor-wait"
@@ -267,28 +268,28 @@ export default function PalacePage() {
 
                 await recordScore(dynasty.family_name, tier, highTitle, dynasty.total_generations, score);
 
-                sessionStorage.setItem("dynasty_summary", JSON.stringify({
+                setSessionJSON("dynasty_summary", {
                   familyName: dynasty.family_name,
                   tier,
                   highestTitle: highTitle,
                   generations: dynasty.total_generations,
                   score,
-                }));
-                sessionStorage.removeItem("game_state");
-                sessionStorage.removeItem("palace_result");
+                });
+                removeSessionJSON("game_state");
+                removeSessionJSON("palace_result");
                 router.push("/leaderboard");
                 return;
               }
 
-              sessionStorage.setItem("inheritance_data", JSON.stringify({
+              setSessionJSON("inheritance_data", {
                 state: result.state,
                 heirs: heirsResult.heirs,
                 legacyTokens: heirsResult.legacyTokens,
                 blessingPoints: heirsResult.blessingPoints,
                 isAdoption: heirsResult.isAdoption,
                 deathReason: heirsResult.deathReason,
-              }));
-              sessionStorage.removeItem("palace_result");
+              });
+              removeSessionJSON("palace_result");
               router.push("/inherit");
             })}
             className="px-6 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.22em] transition-all duration-200 disabled:opacity-50 disabled:cursor-wait"

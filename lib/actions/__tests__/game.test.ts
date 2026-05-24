@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { advanceTurn, generateHeirsAction } from "../game";
+import { advanceTurn, generateHeirsAction, newGame } from "../game";
 import { createCharacter } from "@/lib/engine/reducer";
 import { createRng } from "@/lib/engine/rng";
 import type { GameState } from "@/lib/game/schema";
@@ -47,6 +47,14 @@ vi.mock("@/lib/ai/contracts/heirs", () => ({
 }));
 
 describe("game actions", () => {
+  it("creates and persists a new game", async () => {
+    const result = await newGame("陈", "farming_family");
+
+    expect(result.id).toBe("test-save-id");
+    expect(result.state.dynasty.family_name).toBe("陈");
+    expect(result.state.character.origin).toBe("farming_family");
+  });
+
   it("does not attach a mentor relationship when socialize creates a friend NPC", async () => {
     const state = createCharacter("陈", "farming_family", createRng(42));
     state.turn_number = 2;

@@ -3,8 +3,6 @@
 import { topScores, recordVictory } from "@/lib/db/queries";
 import type { LeaderboardEntry } from "@/lib/db/queries";
 
-export type { LeaderboardEntry };
-
 /**
  * Fetch the top 12 leaderboard entries.
  */

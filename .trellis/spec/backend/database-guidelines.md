@@ -104,6 +104,128 @@ The game uses anonymous sessions — no login, no auth. Players reconnect to the
 - Save IDs are UUIDs — unguessable, so knowing an ID = owning the save. This is acceptable for a hackathon demo.
 - No rate limiting on save creation for v1 (acceptable for demo scale).
 
+## Scenario: Supabase Persistence Fallback
+
+### 1. Scope / Trigger
+
+- Trigger: save/leaderboard persistence touches external infrastructure (Supabase env, HTTP connectivity, Postgres schema, and RLS).
+- Purpose: local demo play must not crash when Supabase is missing, stopped, unreachable, or out of sync with migrations.
+- Boundary: fallback is allowed only outside production, or when `SUPABASE_MEMORY_FALLBACK=true` is explicitly set. Supabase remains the canonical persistence path for production.
+
+### 2. Signatures
+
+```ts
+export async function loadSave(id: string): Promise<GameState | null>;
+export async function createSave(state: GameState): Promise<string>;
+export async function upsertSave(id: string, state: GameState): Promise<void>;
+export async function topScores(limit?: number): Promise<LeaderboardEntry[]>;
+export async function recordVictory(entry: LeaderboardEntry): Promise<void>;
+```
+
+### 3. Contracts
+
+- Environment keys: `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` enable Supabase access.
+- Optional override: `SUPABASE_MEMORY_FALLBACK=true` enables volatile fallback even when `NODE_ENV=production`; use only for controlled demos where persistence loss is acceptable.
+- Save write contract: `createSave()` validates `GameState`, inserts `{ slot: "default", state, turn_number, updated_at }`, selects `id`, and returns a string ID.
+- Development fallback contract: when Supabase config/client/query fails outside production, create/update/read uses an in-memory `Map<string, GameState>` for saves and an in-memory leaderboard array.
+- Production failure contract: when Supabase is unavailable in production, write paths throw `persistence_unavailable`; UI call sites catch it and show a friendly retryable message instead of a Next.js runtime error.
+- Client contract: Server Actions still return the same shapes on success (`{ id, state }` for `newGame()`); raw Supabase errors are never returned to the browser.
+
+### 4. Validation & Error Matrix
+
+- Missing Supabase env outside production -> log warning -> use in-memory fallback where possible.
+- Missing Supabase env in production -> log warning -> write paths throw `persistence_unavailable`; read/list paths return safe empty states where appropriate.
+- Supabase client creation fails outside production -> log diagnostic -> use in-memory fallback where possible.
+- Supabase client creation fails in production -> log diagnostic -> write paths throw `persistence_unavailable`.
+- Insert/update/select returns Supabase/Postgres error outside production -> log `code`, `message`, `details`, `hint`, operation metadata -> use in-memory fallback where possible.
+- Insert/update returns Supabase/Postgres error in production -> log `code`, `message`, `details`, `hint`, operation metadata -> throw `persistence_unavailable`.
+- DB row contains invalid `GameState` -> log Zod issues -> return `null`; do not auto-repair corrupted saves.
+- Engine/schema validation of the outgoing `GameState` fails -> throw; this is a programmer bug, not an infrastructure fallback.
+
+### 5. Good/Base/Bad Cases
+
+- Good: Supabase is configured, migrations are current, RLS allows anon save access; `createSave()` returns the generated UUID from Postgres.
+- Base: local Supabase is stopped or env is empty; new game creation returns an in-memory ID and the current dev process can continue playing.
+- Bad: production database schema is stale (for example `turn_number` missing); server logs must include the Supabase error, and the UI must show a friendly retry message instead of pretending the save is durable.
+
+### 6. Tests Required
+
+- `createSave()` success: mock Supabase insert/select returning `{ id }`, assert that ID is returned.
+- `createSave()` failure: mock a Supabase error, assert a non-empty fallback ID is returned and `loadSave(id)` reads the validated state back.
+- `createSave()` production failure: stub `NODE_ENV=production`, mock a Supabase error, assert `persistence_unavailable` is thrown unless `SUPABASE_MEMORY_FALLBACK=true`.
+- `upsertSave()` fallback: update an in-memory save and assert the next `loadSave(id)` sees the new `turn_number`.
+- `newGame()` action: mock persistence and assert `{ id, state }` remains stable for the client.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+if (error || !data) {
+  throw new Error("Failed to create save");
+}
+```
+
+This crashes character creation for expected infrastructure failures and hides the actionable Supabase diagnostic.
+
+#### Correct
+
+```ts
+if (error || !data) {
+  logPersistenceFailure("create_save", error ?? "No row returned from insert");
+  return createFallbackSave("create_save", validated);
+}
+```
+
+The user can continue a local/demo session, while production fails honestly with a retryable UI message and server logs still point to missing env, connectivity, migration, or RLS problems.
+
+## Scenario: Server Action Type Exports
+
+### 1. Scope / Trigger
+
+- Trigger: files beginning with `"use server"` are compiled as Server Action modules by Next.js/Turbopack.
+
+### 2. Signatures
+
+- Server Action files may export async action functions.
+- Domain types should be imported from schema/query modules by consumers, not re-exported from action modules.
+
+### 3. Contracts
+
+- Do not write `export type { SomeType }` in a `"use server"` file.
+- Do not export interfaces/types from a `"use server"` file unless a local action signature absolutely needs them and runtime verification has passed.
+
+### 4. Validation & Error Matrix
+
+- Type re-export from a Server Action module -> Turbopack may emit a runtime value export -> `ReferenceError: <Type> is not defined`.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `app/(game)/leaderboard/page.tsx` imports `type { LeaderboardEntry }` from `lib/db/queries`.
+- Bad: `lib/actions/leaderboard.ts` re-exports `LeaderboardEntry` from a `"use server"` file.
+
+### 6. Tests Required
+
+- Typecheck is not sufficient; verify at least one browser/Server Action path that imports the action module.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+"use server";
+import type { LeaderboardEntry } from "@/lib/db/queries";
+export type { LeaderboardEntry };
+```
+
+#### Correct
+
+```ts
+"use server";
+import { topScores } from "@/lib/db/queries";
+// UI imports LeaderboardEntry directly from lib/db/queries.
+```
+
 ---
 
 ## Conventions

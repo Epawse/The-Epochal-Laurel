@@ -589,7 +589,7 @@ export async function submitExamAnswer(
     event_type: passed ? "exam_pass" : "exam_fail",
     context: {
       character_name: character.name,
-      detail: `${examLevel} exam, score ${score}/${threshold ?? 100}. ${resolution.titleAwarded ? `Awarded title: ${resolution.titleAwarded}` : ""}`,
+      detail: `${examLevel} exam (non-ranking threshold exam), score ${score}/${threshold ?? 100}. ${resolution.titleAwarded ? `Awarded title: ${resolution.titleAwarded}.` : ""} Do not mention rank or first place.`,
     },
     tone: passed ? "triumphant" : "tragic",
   });

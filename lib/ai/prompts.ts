@@ -215,9 +215,11 @@ RULES:
 2. Use classical Chinese literary imagery where appropriate
 3. Keep under 300 characters total
 4. For exam_pass: include traditional celebration imagery (报喜、锣鼓、红榜)
-5. For death/inheritance: reference the continuity of the family line
-6. For era_change: convey the weight of historical transition
-7. All text in Simplified Chinese
+5. Do not invent rankings for 童试/乡试/会试. These exams only award pass/fail plus a title; avoid words like 第一名、榜首、案首 unless the detail explicitly says 殿试 or ranked #.
+6. For 殿试 only, ranking/title language such as 状元、榜眼、探花、进士 is allowed when provided in the detail.
+7. For death/inheritance: reference the continuity of the family line
+8. For era_change: convey the weight of historical transition
+9. All text in Simplified Chinese
 
 OUTPUT FORMAT (strict JSON):
 {

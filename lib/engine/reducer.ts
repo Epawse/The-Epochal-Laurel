@@ -5,7 +5,7 @@
  */
 
 import type { GameState, Character, Stats, StatChanges } from "@/lib/game/schema";
-import type { Origin, ExamLevel, Season } from "@/lib/game/constants";
+import type { Origin, ExamLevel, Season, Era } from "@/lib/game/constants";
 import {
   ORIGINS,
   BASE_STATS,
@@ -26,7 +26,7 @@ import {
   clampStats,
 } from "./balance";
 import { palaceRanking } from "./exam";
-import { rollMaxAge } from "./lineage";
+import { rollMaxAge, canMarry, rollFertileUntil, rollSonBirth, rollChildSurvival } from "./lineage";
 import {
   calculateLegacyTokens,
   calculateBlessingPoints,
@@ -144,6 +144,34 @@ export function advanceSeason(
     newState.world.year += 1;
     newState.world.era_year += 1;
     newState.character.age += 1;
+
+    // 7b. Lineage: auto-marry when eligible and unmarried
+    if (
+      !newState.character.family.spouse &&
+      newState.character.age >= 16 &&
+      canMarry(newState.character.stats.fortune, newState.character.stats.wealth)
+    ) {
+      const fertileUntil = rollFertileUntil(newState.world.year, rng);
+      newState.character.family.spouse = {
+        npc_id: `spouse_${newState.turn_number}`,
+        married_year: newState.world.year,
+        fertile_until_year: fertileUntil,
+      };
+    }
+
+    // 7c. Lineage: yearly birth roll if married and fertile
+    const spouse = newState.character.family.spouse;
+    if (spouse && newState.world.year <= spouse.fertile_until_year) {
+      if (rollSonBirth(rng)) {
+        const survives = rollChildSurvival(newState.world.era as Era, rng);
+        newState.character.family.children.push({
+          name: `${newState.dynasty.family_name}氏子`,
+          born_year: newState.world.year,
+          is_son: true,
+          alive: survives,
+        });
+      }
+    }
   }
 
   // 8. Update exam schedule countdown (decrement each season)

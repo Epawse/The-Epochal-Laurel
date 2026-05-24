@@ -403,3 +403,38 @@ Fixed save creation failures with Supabase diagnostics and non-production fallba
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Roguelike depth and exam difficulty overhaul
+
+**Date**: 2026-05-24
+**Task**: Roguelike depth and exam difficulty overhaul
+**Branch**: `codex/roguelike-depth-and-exam-difficulty-overhaul`
+
+### Summary
+
+Implemented the roguelike overhaul: typed effects/modifiers, relic drafts/shop/heirlooms, skills and origin kits, world modifiers, rollable starts, dice-based events, harder exams with intel gates, richer V1 fallback, UI support, tests, and synchronized game-design specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c48063e` | (see git log) |
+| `5276c23` | (see git log) |
+| `e1b8b9f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

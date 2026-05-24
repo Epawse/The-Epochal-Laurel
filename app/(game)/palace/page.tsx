@@ -303,11 +303,7 @@ export default function PalacePage() {
 
 /** Extract rival answer summary from the palace result data stored in sessionStorage */
 function getRivalSummary(rivalName: string, result: PalaceExamResult): string {
-  // The rivals data is stored in the exam_history entry
-  const palaceExam = result.state.character.exam_history.find(
-    (e) => e.level === "palace" && e.rivals
-  );
-  if (!palaceExam?.rivals) return "";
-  const rival = palaceExam.rivals.find((r) => r.name === rivalName);
-  return rival ? "" : "";
+  const entry = result.ranking.find((r) => r.name === rivalName);
+  if (!entry) return "";
+  return `得分 ${entry.score}`;
 }

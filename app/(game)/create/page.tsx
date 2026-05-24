@@ -303,7 +303,7 @@ export default function CreatePage() {
                 </div>
                 <p className="m-0 font-serif text-[13px] text-bone tracking-[0.06em] leading-relaxed">
                   {preview.startingPackage.bonusTrait} ·{" "}
-                  {preview.startingPackage.bonusRelic.name} ·{" "}
+                  {preview.startingPackage.bonusRelic?.name ?? "无"} ·{" "}
                   {preview.startingPackage.bonusSkill.name}
                 </p>
               </div>

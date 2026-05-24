@@ -341,6 +341,23 @@ directly in gameplay code.
 Stored in `character.relics`. Per-life by default (lost at death). At inheritance the
 player may pick **≤1** `heirloom_eligible` relic to carry over (see `dynasty.pending_heirloom`).
 
+### Relic Draft
+
+Relic drafts are transient choice sets stored at `pending_relic_draft`.
+`options` must contain **1–3** relic options. The normal case is three options,
+but the engine may return fewer late in a run when `seen_relic_ids` has exhausted
+most of the catalog. A zero-option result is not a draft and must not be queued
+or persisted.
+
+```json
+{
+  "id": "draft_12_event_lucky_coin",
+  "source": "action | event | shop | exam | catastrophe | start | skill",
+  "options": [{ "relic": { "id": "lucky_coin" }, "cost": 0 }],
+  "created_turn": 12
+}
+```
+
 ### Skill
 
 ```json

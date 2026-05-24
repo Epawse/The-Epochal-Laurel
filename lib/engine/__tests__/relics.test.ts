@@ -7,6 +7,7 @@ import {
   chooseRelicFromDraft,
   createMerchantRelicDraft,
   createRelicDraft,
+  RELIC_CATALOG,
   queueRelicDraft,
   relicCost,
 } from "../relics";
@@ -15,6 +16,7 @@ describe("relics", () => {
   it("creates a unique three-option draft and marks offered relics as seen", () => {
     const state = createCharacter("陈", "farming_family", createRng(42));
     const draft = createRelicDraft(state, createRng(7), "action", ["academic"]);
+    if (!draft) throw new Error("Expected relic draft");
 
     expect(draft.options).toHaveLength(3);
     expect(new Set(draft.options.map((option) => option.relic.id)).size).toBe(3);
@@ -30,6 +32,7 @@ describe("relics", () => {
   it("chooses one relic from a draft and clears the pending draft", () => {
     const state = createCharacter("陈", "farming_family", createRng(42));
     const draft = createRelicDraft(state, createRng(7), "action", ["academic"]);
+    if (!draft) throw new Error("Expected relic draft");
     const queued = queueRelicDraft(state, draft);
     const selected = draft.options[1].relic;
 
@@ -65,6 +68,15 @@ describe("relics", () => {
     expect(() => createMerchantRelicDraft(state, createRng(4))).toThrow(
       "merchant_shop_requires_wealth_15"
     );
+  });
+
+  it("returns no draft when every relic has already been seen", () => {
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.character.seen_relic_ids = RELIC_CATALOG.map((relic) => relic.id);
+
+    const draft = createRelicDraft(state, createRng(7), "event", ["academic"]);
+
+    expect(draft).toBeNull();
   });
 
   it("carries one heirloom-eligible relic into the next generation", () => {

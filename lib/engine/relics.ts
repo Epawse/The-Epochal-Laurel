@@ -165,11 +165,22 @@ export function createMerchantRelicDraft(state: GameState, rng: Rng): RelicDraft
   if (state.character.stats.wealth < SHOP_MIN_WEALTH) {
     throw new Error("merchant_shop_requires_wealth_15");
   }
-  return createRelicDraft(state, rng, "shop", ["academic", "social", "scheme", "wealth", "survival"]);
+  const draft = createRelicDraft(state, rng, "shop", [
+    "academic",
+    "social",
+    "scheme",
+    "wealth",
+    "survival",
+  ]);
+  if (!draft) {
+    throw new Error("relic_pool_exhausted");
+  }
+  return draft;
 }
 
-export function pickStartingRelic(state: GameState, rng: Rng): Relic {
-  return toRelic(drawOneRelic(rng, ["starter"], state.world.era, new Set()));
+export function pickStartingRelic(state: GameState, rng: Rng): Relic | null {
+  const def = drawOneRelic(rng, ["starter"], state.world.era, new Set());
+  return def ? toRelic(def) : null;
 }
 
 export function createRelicDraft(
@@ -177,7 +188,7 @@ export function createRelicDraft(
   rng: Rng,
   source: RelicDraftSource,
   tags: readonly RelicTag[] = []
-): RelicDraft {
+): RelicDraft | null {
   const picked: Relic[] = [];
   const excluded = new Set([
     ...state.character.seen_relic_ids,
@@ -186,8 +197,13 @@ export function createRelicDraft(
 
   for (let i = 0; i < 3; i++) {
     const relic = drawOneRelic(rng, tags, state.world.era, excluded);
+    if (!relic) break;
     excluded.add(relic.id);
     picked.push(toRelic(relic));
+  }
+
+  if (picked.length === 0) {
+    return null;
   }
 
   return {
@@ -206,7 +222,7 @@ export function createRelicDraftFromIds(
   rng: Rng,
   source: RelicDraftSource,
   relicIds: readonly string[]
-): RelicDraft {
+): RelicDraft | null {
   const excluded = new Set([
     ...state.character.seen_relic_ids,
     ...state.character.relics.map((relic) => relic.id),
@@ -223,8 +239,13 @@ export function createRelicDraftFromIds(
 
   while (picked.length < 3) {
     const relic = drawOneRelic(rng, [], state.world.era, excluded);
+    if (!relic) break;
     picked.push(toRelic(relic));
     excluded.add(relic.id);
+  }
+
+  if (picked.length === 0) {
+    return null;
   }
 
   return {
@@ -312,7 +333,7 @@ function drawOneRelic(
   tags: readonly RelicTag[],
   era: Era,
   excluded: Set<string>
-): RelicDef {
+): RelicDef | null {
   const rarity = rollRarity(rng);
   const primary = filterRelics({ tags, era, excluded, rarity });
   const fallbackTagged = filterRelics({ tags, era, excluded });
@@ -323,7 +344,7 @@ function drawOneRelic(
       ? fallbackTagged
       : fallbackAny;
   if (candidates.length === 0) {
-    throw new Error("Relic pool exhausted for this generation");
+    return null;
   }
   return candidates[rng.nextInt(0, candidates.length - 1)];
 }

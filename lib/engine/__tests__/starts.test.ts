@@ -30,11 +30,11 @@ describe("starts", () => {
 
     expect(result.state.character.traits).toContain(result.startingPackage.bonusTrait);
     expect(result.state.character.relics.map((relic) => relic.id)).toContain(
-      result.startingPackage.bonusRelic.id
+      result.startingPackage.bonusRelic!.id
     );
     expect(result.state.character.skills.map((skill) => skill.id)).toContain(
       result.startingPackage.bonusSkill.id
     );
-    expect(result.state.character.seen_relic_ids).toContain(result.startingPackage.bonusRelic.id);
+    expect(result.state.character.seen_relic_ids).toContain(result.startingPackage.bonusRelic!.id);
   });
 });

@@ -138,7 +138,7 @@ export type RelicDraftOption = z.infer<typeof RelicDraftOptionSchema>;
 export const RelicDraftSchema = z.object({
   id: z.string(),
   source: RelicDraftSourceSchema,
-  options: z.array(RelicDraftOptionSchema).length(3),
+  options: z.array(RelicDraftOptionSchema).min(1).max(3),
   created_turn: z.number().int().min(0),
 });
 export type RelicDraft = z.infer<typeof RelicDraftSchema>;

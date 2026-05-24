@@ -9,8 +9,15 @@ export interface LeaderboardEntry {
   score: number;
 }
 
-const memorySaves = new Map<string, GameState>();
-const memoryLeaderboard: LeaderboardEntry[] = [];
+const globalForDev = globalThis as unknown as {
+  __memorySaves?: Map<string, GameState>;
+  __memoryLeaderboard?: LeaderboardEntry[];
+};
+
+const memorySaves: Map<string, GameState> =
+  globalForDev.__memorySaves ?? (globalForDev.__memorySaves = new Map());
+const memoryLeaderboard: LeaderboardEntry[] =
+  globalForDev.__memoryLeaderboard ?? (globalForDev.__memoryLeaderboard = []);
 const PERSISTENCE_UNAVAILABLE = "persistence_unavailable";
 
 function canUseMemoryFallback(): boolean {

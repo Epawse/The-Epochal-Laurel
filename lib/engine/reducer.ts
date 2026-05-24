@@ -384,6 +384,7 @@ function applyEventReward(
 
   if (reward.type === "relic_draft" && !state.pending_relic_draft) {
     const draft = createRelicDraftFromIds(state, rng, "event", reward.relic_ids);
+    if (!draft) return null;
     const queued = queueRelicDraft(state, draft);
     state.pending_relic_draft = queued.pending_relic_draft;
     state.character.seen_relic_ids = queued.character.seen_relic_ids;
@@ -459,7 +460,9 @@ export function applyCatastrophe(
       "traveling_medicine",
       "lucky_coin",
     ]);
-    newState = queueRelicDraft(newState, relicDraft);
+    if (relicDraft) {
+      newState = queueRelicDraft(newState, relicDraft);
+    }
   }
 
   return { state: newState, statChanges: statPenalty, relicDraft };

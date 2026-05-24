@@ -62,7 +62,7 @@ describe("game actions", () => {
     expect(result.seed).toBe(1234);
     expect(result.state.dynasty.family_name).toBe("陈");
     expect(result.state.character.origin).toBe("farming_family");
-    expect(result.startingPackage.bonusRelic.id).toBe(result.state.character.relics[0]?.id);
+    expect(result.startingPackage.bonusRelic!.id).toBe(result.state.character.relics[0]?.id);
   });
 
   it("previews the same starting package for the same seed without creating a save", async () => {

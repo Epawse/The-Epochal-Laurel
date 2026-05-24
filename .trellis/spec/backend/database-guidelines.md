@@ -128,12 +128,14 @@ export async function recordVictory(entry: LeaderboardEntry): Promise<void>;
 - Optional override: `SUPABASE_MEMORY_FALLBACK=true` enables volatile fallback even when `NODE_ENV=production`; use only for controlled demos where persistence loss is acceptable.
 - Save write contract: `createSave()` validates `GameState`, inserts `{ slot: "default", state, turn_number, updated_at }`, selects `id`, and returns a string ID.
 - Development fallback contract: when Supabase config/client/query fails outside production, create/update/read uses an in-memory `Map<string, GameState>` for saves and an in-memory leaderboard array.
+- The in-memory fallback store lives on `globalThis`, not only module scope, so local Server Action/HMR module reloads do not immediately orphan the just-created fallback save ID.
 - Production failure contract: when Supabase is unavailable in production, write paths throw `persistence_unavailable`; UI call sites catch it and show a friendly retryable message instead of a Next.js runtime error.
 - Client contract: Server Actions still return the same shapes on success (`{ id, state }` for `newGame()`); raw Supabase errors are never returned to the browser.
 
 ### 4. Validation & Error Matrix
 
 - Missing Supabase env outside production -> log warning -> use in-memory fallback where possible.
+- Local Server Action module reload while using fallback -> existing fallback saves remain readable from the process-global store.
 - Missing Supabase env in production -> log warning -> write paths throw `persistence_unavailable`; read/list paths return safe empty states where appropriate.
 - Supabase client creation fails outside production -> log diagnostic -> use in-memory fallback where possible.
 - Supabase client creation fails in production -> log diagnostic -> write paths throw `persistence_unavailable`.
@@ -154,6 +156,7 @@ export async function recordVictory(entry: LeaderboardEntry): Promise<void>;
 - `createSave()` failure: mock a Supabase error, assert a non-empty fallback ID is returned and `loadSave(id)` reads the validated state back.
 - `createSave()` production failure: stub `NODE_ENV=production`, mock a Supabase error, assert `persistence_unavailable` is thrown unless `SUPABASE_MEMORY_FALLBACK=true`.
 - `upsertSave()` fallback: update an in-memory save and assert the next `loadSave(id)` sees the new `turn_number`.
+- Fallback store lifetime: create a fallback save, reload/re-import the query module in a test harness if practical, and assert `loadSave(id)` still reads it within the same Node process.
 - `newGame()` action: mock persistence and assert `{ id, state }` remains stable for the client.
 
 ### 7. Wrong vs Correct

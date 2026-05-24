@@ -12,7 +12,7 @@ import { SKILL_CATALOG } from "./skills";
 export interface StartingPackage {
   seed: number;
   statJitter: StatChanges;
-  bonusRelic: Relic;
+  bonusRelic: Relic | null;
   bonusSkill: Skill;
   bonusTrait: string;
 }
@@ -39,8 +39,10 @@ export function applyStartingPackage(
   const bonusTrait = STARTING_TRAITS[rng.nextInt(0, STARTING_TRAITS.length - 1)];
 
   next.character.stats = applyStatChanges(next.character.stats, statJitter);
-  next.character.relics.push(bonusRelic);
-  next.character.seen_relic_ids = [...new Set([...next.character.seen_relic_ids, bonusRelic.id])];
+  if (bonusRelic) {
+    next.character.relics.push(bonusRelic);
+    next.character.seen_relic_ids = [...new Set([...next.character.seen_relic_ids, bonusRelic.id])];
+  }
   if (!next.character.skills.some((skill) => skill.id === bonusSkill.id)) {
     next.character.skills.push(bonusSkill);
   }

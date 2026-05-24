@@ -368,3 +368,38 @@ Final polish: P0 exam pass celebration animation with confetti, P1 scheme exposu
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Fix Supabase save creation and mobile layouts
+
+**Date**: 2026-05-24
+**Task**: Fix Supabase save creation and mobile layouts
+**Branch**: `fix/save-create-supabase-mobile`
+
+### Summary
+
+Fixed save creation failures with Supabase diagnostics and non-production fallback, added regression coverage, caught server-action type export issue, improved mobile layouts and persistence error UI, and synced Codex/Trellis workflow helpers.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `30f4027` | (see git log) |
+| `b9f824e` | (see git log) |
+| `c857984` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

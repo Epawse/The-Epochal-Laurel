@@ -2,7 +2,7 @@
 
 import type { GameState, Npc, CurrentEvent } from "@/lib/game/schema";
 import type { Origin, ExamLevel, EventType } from "@/lib/game/constants";
-import { createCharacter, advanceSeason, applyEventChoice } from "@/lib/engine/reducer";
+import { createCharacter, advanceSeason, applyEventChoice, resolveExam, resolvePalaceExam } from "@/lib/engine/reducer";
 import { createRng } from "@/lib/engine/rng";
 import { applyStatChanges } from "@/lib/engine/balance";
 import { loadSave, createSave, upsertSave } from "@/lib/db/queries";
@@ -408,7 +408,7 @@ function npcRoleLabel(role: string): string {
 
 // ── getExamQuestion ──────────────────────────────────────────────────────────
 
-import { EXAM_REWARDS, TITLE_RANK } from "@/lib/game/constants";
+import { EXAM_REWARDS } from "@/lib/game/constants";
 import {
   scoreFixedChoice,
   scoreFreeText,
@@ -566,54 +566,30 @@ export async function submitExamAnswer(
   );
   const passed = threshold === null ? true : score >= threshold;
 
-  // Award title if passed
-  let title: string | null = null;
-  const newState = structuredClone(currentState) as GameState;
-
-  if (passed) {
-    title = EXAM_REWARDS[examLevel];
-    if (title && !newState.character.titles.includes(title)) {
-      newState.character.titles.push(title);
-    }
-  }
-
-  // Record exam history
-  newState.character.exam_history.push({
-    level: examLevel,
-    year: world.year,
-    result: passed ? "pass" : "fail",
-    score,
-  });
-
-  // Apply risk penalty if triggered
-  const statChanges = { erudition: 0, fortune: 0, drive: 0, wealth: 0 };
-  if (riskTriggered && riskPenalty) {
-    statChanges.drive = riskPenalty.drive;
-    statChanges.fortune = riskPenalty.fortune;
-    newState.character.stats = applyStatChanges(newState.character.stats, {
-      erudition: 0,
-      fortune: riskPenalty.fortune,
-      drive: riskPenalty.drive,
-      wealth: 0,
-    });
-  }
+  // Delegate state mutations to engine (awards title, records history, resets schedule)
+  const riskPenaltyChanges = riskTriggered && riskPenalty
+    ? { erudition: 0, fortune: riskPenalty.fortune, drive: riskPenalty.drive, wealth: 0 }
+    : undefined;
+  const resolution = resolveExam(currentState, examLevel, score, passed, riskPenaltyChanges);
+  const newState = resolution.state;
 
   // Drive cost for taking exam
   const examDriveCost = -5;
-  statChanges.drive += examDriveCost;
   newState.character.stats = applyStatChanges(newState.character.stats, {
-    erudition: 0,
-    fortune: 0,
-    drive: examDriveCost,
-    wealth: 0,
+    erudition: 0, fortune: 0, drive: examDriveCost, wealth: 0,
   });
 
-  // Generate narration via R1
+  const statChanges = { erudition: 0, fortune: 0, drive: examDriveCost, wealth: 0 };
+  if (riskTriggered && riskPenalty) {
+    statChanges.drive += riskPenalty.drive;
+    statChanges.fortune = riskPenalty.fortune;
+  }
+
   const narrationResult = await generateNarration({
     event_type: passed ? "exam_pass" : "exam_fail",
     context: {
       character_name: character.name,
-      detail: `${examLevel} exam, score ${score}/${threshold ?? 100}. ${title ? `Awarded title: ${title}` : ""}`,
+      detail: `${examLevel} exam, score ${score}/${threshold ?? 100}. ${resolution.titleAwarded ? `Awarded title: ${resolution.titleAwarded}` : ""}`,
     },
     tone: passed ? "triumphant" : "tragic",
   });
@@ -624,7 +600,7 @@ export async function submitExamAnswer(
     passed,
     score,
     threshold,
-    title,
+    title: resolution.titleAwarded,
     narration: narrationResult.narration,
     soundCue: narrationResult.sound_cue,
     statChanges,
@@ -1035,7 +1011,7 @@ function applyNpcEraChange(
 // ── submitPalaceExam ────────────────────────────────────────────────────────
 
 import { generatePalaceRivals, getRivalStrength } from "@/lib/ai/contracts/palaceRivals";
-import { palaceRanking, type RankingEntry } from "@/lib/engine/exam";
+import { type RankingEntry } from "@/lib/engine/exam";
 import type { E3Input } from "@/lib/ai/schema";
 
 export type VictoryTier = "S" | "A" | "B" | "C" | "D" | "F" | null;
@@ -1116,16 +1092,15 @@ export async function submitPalaceExam(
   };
   const rivalsResult = await generatePalaceRivals(e3Input);
 
-  // ── Step 3: Engine ranks all 4 candidates ──
-  const ranking = palaceRanking(
-    character.name,
-    playerScore,
-    rivalsResult.rivals.map((r) => ({ name: r.name, score: r.score }))
-  );
+  // ── Step 3: Delegate state mutations to engine (ranking, title, history, dynasty) ──
+  const rivals = rivalsResult.rivals.map((r) => ({ name: r.name, score: r.score }));
+  const resolution = resolvePalaceExam(currentState, playerScore, rivals);
+  const { state: newState, ranking, playerRank, playerTitle } = resolution;
 
-  const playerEntry = ranking.find((r) => r.name === character.name)!;
-  const playerRank = playerEntry.rank;
-  const playerTitle = playerEntry.title;
+  // Drive cost for taking exam (not handled by engine)
+  newState.character.stats = applyStatChanges(newState.character.stats, {
+    erudition: 0, fortune: 0, drive: -5, wealth: 0,
+  });
 
   // ── Step 4: Generate narration via R1 (include emperor's 御评) ──
   const champion = ranking[0];
@@ -1135,47 +1110,10 @@ export async function submitPalaceExam(
       character_name: character.name,
       detail: `殿试 palace exam. Player ranked #${playerRank} (${playerTitle}), score ${playerScore}. Champion: ${champion.name} (${champion.title}, score ${champion.score}). Include emperor's 御评 on the champion's answer.`,
     },
-    tone: playerRank === 1 ? "triumphant" : playerRank <= 3 ? "bittersweet" : "bittersweet",
+    tone: playerRank === 1 ? "triumphant" : "bittersweet",
   });
 
-  // ── Step 5: Update game state ──
-  const newState = structuredClone(currentState) as GameState;
-
-  // Award title based on rank
-  const titleToAward = playerTitle === "状元" ? "状元" : "进士";
-  if (!newState.character.titles.includes(titleToAward)) {
-    newState.character.titles.push(titleToAward);
-  }
-  // Also ensure 进士 is always awarded (all palace exam participants get at least 进士)
-  if (!newState.character.titles.includes("进士")) {
-    newState.character.titles.push("进士");
-  }
-
-  // Record exam history with ranking info
-  newState.character.exam_history.push({
-    level: "palace",
-    year: world.year,
-    result: "pass",
-    score: playerScore,
-    rank: playerRank,
-    title: playerTitle,
-    rivals: rivalsResult.rivals.map((r) => ({ name: r.name, score: r.score })),
-  });
-
-  // Drive cost for taking exam
-  newState.character.stats = applyStatChanges(newState.character.stats, {
-    erudition: 0,
-    fortune: 0,
-    drive: -5,
-    wealth: 0,
-  });
-
-  // Update dynasty highest title (shared TITLE_RANK — see constants.ts)
-  if ((TITLE_RANK[playerTitle] ?? 0) > (TITLE_RANK[newState.dynasty.highest_title_ever] ?? 0)) {
-    newState.dynasty.highest_title_ever = playerTitle;
-  }
-
-  // ── Step 6: Evaluate victory condition ──
+  // ── Step 5: Evaluate victory condition ──
   const victoryTier = evaluateVictory(newState);
 
   await upsertSave(saveId, newState);

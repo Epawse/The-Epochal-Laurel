@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/game-design/ai-contracts.md", "reason": "V1/V2 output schemas, per-delta caps (V1 ±15, V2 ±20), latency budgets, fallback + 'retry on parse failure' mandate, rate-limit envelope — the contract this task must honor"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "own-fallback (degrade-never-throw) + retry pattern that generateEvent/callLLM must follow for the V1 robustness work"}
+{"file": ".trellis/spec/frontend/motion-patterns.md", "reason": "diegetic event-loading modal state (Step 2): in-world skeleton/shimmer, no bare spinner, no frozen frame"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "client state + useSessionJSON conventions for the split-turn flow (instant engine result, async event fill)"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "ai.call telemetry shape — used to assert/observe prefetch cache hits vs live generation"}

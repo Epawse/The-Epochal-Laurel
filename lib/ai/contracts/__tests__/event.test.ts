@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateEvent } from "../event";
+import { callLLM } from "../../client";
 import type { V1Input } from "../../schema";
 
 vi.mock("../../client", () => ({
@@ -13,6 +14,29 @@ vi.mock("../../../log", () => ({
     warn: vi.fn(),
   },
 }));
+
+const mockCallLLM = vi.mocked(callLLM);
+
+// Default for the fallback suite: every call fails so generateEvent (after its one
+// retry) degrades to the static pool. Retry-specific tests override per-call.
+beforeEach(() => {
+  mockCallLLM.mockReset();
+  mockCallLLM.mockRejectedValue(new Error("llm unavailable"));
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+function llmResult(content: string) {
+  return {
+    content,
+    provider: "deepseek" as const,
+    model: "deepseek-v4-flash",
+    latencyMs: 10,
+    fallbackUsed: false,
+  };
+}
 
 function inputFor(eventType: V1Input["event_type"]): V1Input {
   return {
@@ -66,5 +90,54 @@ describe("V1 event fallback", () => {
     const event = await generateEvent(inputFor("misfortune"));
 
     expect(event.reward ?? null).toBeNull();
+  });
+});
+
+describe("V1 event retry-on-parse-failure", () => {
+  const validEventJson = JSON.stringify({
+    title: "夜读偶得",
+    description: "春夜，陈伯川挑灯夜读，忽于旧卷中得一妙解。",
+    choices: [
+      {
+        id: "a",
+        label: "趁势钻研",
+        stat_changes: { erudition: 5, fortune: 0, drive: -3, wealth: 0 },
+        narrative_preview: "费些精神，学识或有所长。",
+        check: null,
+      },
+      {
+        id: "b",
+        label: "记下作罢",
+        stat_changes: { erudition: 2, fortune: 1, drive: 0, wealth: 0 },
+        narrative_preview: "稳妥行事。",
+      },
+    ],
+    allows_free_input: true,
+    free_input_context: "",
+    reward: null,
+  });
+
+  it("re-calls the model once on parse failure, then returns the valid AI event", async () => {
+    mockCallLLM
+      .mockResolvedValueOnce(llmResult("not json at all {broken")) // first attempt: parse throws
+      .mockResolvedValueOnce(llmResult(validEventJson)); // retry: valid
+
+    const event = await generateEvent(inputFor("opportunity"));
+
+    // Served from the AI, NOT the static pool.
+    expect(event.title).toBe("夜读偶得");
+    expect(mockCallLLM).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to the static pool only after both attempts fail", async () => {
+    mockCallLLM
+      .mockResolvedValueOnce(llmResult("garbage"))
+      .mockResolvedValueOnce(llmResult("still garbage"));
+
+    const event = await generateEvent(inputFor("misfortune"));
+
+    // misfortune static fallback grants no reward — proves the static path ran.
+    expect(event.reward ?? null).toBeNull();
+    expect(mockCallLLM).toHaveBeenCalledTimes(2);
   });
 });

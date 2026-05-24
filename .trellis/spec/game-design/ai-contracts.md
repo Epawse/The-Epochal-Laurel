@@ -520,6 +520,28 @@ thematically appropriate questions.
 
 ### V1 Changes: Random Event Generation
 
+Raw V1 latency is realistically ~5-6s on the current low-tier providers, even
+though the soft budget remains 1.5s for telemetry. The daily-life loop therefore
+MUST keep V1 off the `advanceTurn` critical path:
+
+1. `advanceTurn(saveId, actionId)` returns the deterministic engine result first.
+   If the engine rolled an event, it sets `state.pending_event_type` and leaves
+   `state.current_event = null`.
+2. `generateEventForTurn(saveId)` is the only action that turns
+   `pending_event_type` into `current_event`. It serves from `event_cache[type]`
+   when the stamped `season` + `era` match the now-current state; otherwise it
+   live-generates via V1 as a fallback, then clears the marker.
+3. `prefetchEvents(saveId)` warms all 4 event types during player think-time,
+   using `nextSeason(currentSeason)` as the V1 input season. It MUST reload the
+   save before persisting and only merge cache entries into a still-idle state
+   (same turn/season/era, no current/pending event, no pending relic draft) so a
+   slow prefetch response cannot overwrite a newer turn/event save.
+4. V1 parse/Zod failure retries once with a fresh model call before static
+   fallback. The schema enforces per-delta caps at the contract layer:
+   V1 choice `stat_changes` and all `check.outcomes` entries are ±15; V2
+   `eventEval.stat_changes` is ±20. The shared base `StatChangesSchema` remains
+   unbounded because engine and exam paths have different contracts.
+
 The V1 output schema gains two optional fields:
 
 ```json
@@ -599,6 +621,20 @@ Preserved from the recent `f4651d8` fix — the R1 prompt MUST include:
 - For exam results with a performance roll, the narration may reference 超常发挥 or
   发挥失常 when the variance was significant (|variance| > 8)
 
+### N1 Changes: Deferred NPC Dialogue
+
+N1 dialogue during `socialize` is also off the `advanceTurn` critical path:
+
+- `advanceTurn` may set `state.pending_npc_dialogue =
+  { npc_id, turn_number, interaction_type }` and return a short placeholder line.
+- `generateNpcDialogueForTurn(saveId)` loads that marker, calls N1, applies the
+  N1 `relationship_delta` to the existing relationship if one exists, records NPC
+  memory, clears the marker, persists, and returns the generated line.
+- Stale markers are discarded when the NPC is missing/dead or the marker's
+  `turn_number` no longer matches `state.turn_number`.
+- N1 fallback remains owned by `lib/ai/contracts/npcDialogue.ts`; action callers
+  should not surface AI failures as turn failures.
+
 ---
 
 ## Global Constraints (All Calls)
@@ -606,9 +642,14 @@ Preserved from the recent `f4651d8` fix — the R1 prompt MUST include:
 1. **Temperature**: 0.7 default, 0.3 for Judge (E2), 0.9 for narration (R1)
 2. **Max tokens**: 500 per call (most outputs are short)
 3. **Timeout**: 10 seconds hard limit, fallback triggers at timeout
-4. **Rate limiting**: Max 5 AI calls per player action. A "player action" = one seasonal turn OR one exam attempt. Breakdown:
-   - Normal season (no event): 0-1 calls (action narration is optional)
-   - Season with event: V1 + optional V2 + optional N1 = 1-3 calls
+4. **Rate limiting**: Max 5 synchronous AI calls per player action. Background
+   V1 prefetch deliberately adds up to 4 low-tier calls per idle turn outside
+   the critical path; this is an accepted demo-cost tradeoff to make triggered
+   events feel instant. Breakdown:
+   - Normal season (no event): 0 synchronous calls; optional deferred N1 after
+     socialize; up to 4 background V1 prefetch calls during player think-time
+   - Season with event: 0 synchronous V1 calls on cache hit; live V1 only on
+     cache miss/stale marker, plus optional deferred N1 and optional V2
    - Exam turn: E1 + (E2 only if free-text) + R1 = 2-3 calls (fixed-choice answers are scored by formula, no E2)
    - Palace exam: E1 + (E2 only if free-text) + E3 + R1 = 3-4 calls
    - Inheritance: I1 + R1 = 2 calls

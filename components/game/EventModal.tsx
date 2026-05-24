@@ -13,11 +13,14 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
 };
 
 interface EventModalProps {
-  event: CurrentEvent;
+  /** The event content. Null while `loading` — the modal shows a diegetic shell. */
+  event: CurrentEvent | null;
   onChoice: (id: string) => void;
   onFreeInput: (text: string) => void;
   onClose: () => void;
   disabled?: boolean;
+  /** While true, render the in-world loading shell instead of event content. */
+  loading?: boolean;
 }
 
 export function EventModal({
@@ -26,6 +29,7 @@ export function EventModal({
   onFreeInput,
   onClose,
   disabled = false,
+  loading = false,
 }: EventModalProps) {
   const [freeText, setFreeText] = useState("");
   const [showFreeInput, setShowFreeInput] = useState(false);
@@ -49,6 +53,9 @@ export function EventModal({
     setSubmitting(true);
     onChoice(choiceId);
   }
+
+  // Loading shell takes over whenever content has not arrived yet.
+  const isLoading = loading || !event;
 
   return (
     <AnimatePresence>
@@ -74,97 +81,151 @@ export function EventModal({
           role="dialog"
           aria-modal="true"
           aria-labelledby="event-title"
+          aria-busy={isLoading}
         >
-          {/* Type label */}
-          <span className="font-mono text-[10px] tracking-[0.2em] text-vermillion uppercase">
-            {EVENT_TYPE_LABELS[event.type] ?? event.type}
-          </span>
+          {isLoading ? (
+            <EventLoadingShell titleId="event-title" />
+          ) : (
+            <>
+              {/* Type label */}
+              <span className="font-mono text-[10px] tracking-[0.2em] text-vermillion uppercase">
+                {EVENT_TYPE_LABELS[event.type] ?? event.type}
+              </span>
 
-          {/* Title */}
-          <h2
-            id="event-title"
-            className="font-calli text-[44px] text-gold-glow tracking-[0.18em] mt-2 mb-4 leading-tight"
-          >
-            {event.title}
-          </h2>
+              {/* Title */}
+              <h2
+                id="event-title"
+                className="font-calli text-[44px] text-gold-glow tracking-[0.18em] mt-2 mb-4 leading-tight"
+              >
+                {event.title}
+              </h2>
 
-          {/* Ink divider */}
-          <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-gold-dim to-transparent mb-5" />
+              {/* Ink divider */}
+              <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-gold-dim to-transparent mb-5" />
 
-          {/* Body text */}
-          <p className="font-serif text-base text-bone-dim leading-[1.85] tracking-[0.04em] mb-8">
-            {event.description}
-          </p>
+              {/* Body text */}
+              <p className="font-serif text-base text-bone-dim leading-[1.85] tracking-[0.04em] mb-8">
+                {event.description}
+              </p>
 
-          {event.reward && (
-            <div className="mb-6 border border-dashed border-hairline px-3 py-2 font-serif text-sm text-gold tracking-[0.08em]">
-              {event.reward.type === "relic_draft" && "此事或可得一件奇物"}
-              {event.reward.type === "skill_grant" && "此事或可悟得一门技艺"}
-              {event.reward.type === "buff" && "此事或将留下余韵"}
-            </div>
-          )}
-
-          {/* Choices grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-            {event.choices.map((choice, index) => (
-              <EventChoice
-                key={choice.id}
-                choice={choice}
-                index={index}
-                onClick={handleChoice}
-                disabled={isDisabled}
-              />
-            ))}
-          </div>
-
-          {/* Free-form input section */}
-          {event.allows_free_input && (
-            <div className="border-t border-dashed border-hairline pt-5">
-              {!showFreeInput ? (
-                <button
-                  type="button"
-                  className="font-serif text-sm text-gold-dim tracking-[0.08em] hover:text-gold-glow transition-colors"
-                  onClick={() => setShowFreeInput(true)}
-                  disabled={isDisabled}
-                >
-                  另辟蹊径...
-                </button>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  <label
-                    htmlFor="free-input"
-                    className="font-serif text-xs tracking-[0.12em] text-bone-mute"
-                  >
-                    自拟解法
-                  </label>
-                  <textarea
-                    id="free-input"
-                    className="w-full h-24 bg-paper-2 border border-hairline p-3 font-serif text-sm text-bone tracking-[0.04em] leading-relaxed resize-none focus:border-gold-dim focus:outline-none transition-colors placeholder:text-bone-mute"
-                    placeholder="描述你的创意解法..."
-                    value={freeText}
-                    onChange={(e) => setFreeText(e.target.value)}
-                    disabled={isDisabled}
-                    maxLength={500}
-                  />
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] text-bone-mute">
-                      {freeText.length}/500
-                    </span>
-                    <button
-                      type="button"
-                      className="px-5 py-2 bg-gradient-to-b from-gold-dim to-gold-glow text-paper-0 font-serif text-sm tracking-[0.12em] transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-                      onClick={handleFreeSubmit}
-                      disabled={isDisabled || !freeText.trim()}
-                    >
-                      {isDisabled ? "处理中..." : "提交"}
-                    </button>
-                  </div>
+              {event.reward && (
+                <div className="mb-6 border border-dashed border-hairline px-3 py-2 font-serif text-sm text-gold tracking-[0.08em]">
+                  {event.reward.type === "relic_draft" && "此事或可得一件奇物"}
+                  {event.reward.type === "skill_grant" && "此事或可悟得一门技艺"}
+                  {event.reward.type === "buff" && "此事或将留下余韵"}
                 </div>
               )}
-            </div>
+
+              {/* Choices grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+                {event.choices.map((choice, index) => (
+                  <EventChoice
+                    key={choice.id}
+                    choice={choice}
+                    index={index}
+                    onClick={handleChoice}
+                    disabled={isDisabled}
+                  />
+                ))}
+              </div>
+
+              {/* Free-form input section */}
+              {event.allows_free_input && (
+                <div className="border-t border-dashed border-hairline pt-5">
+                  {!showFreeInput ? (
+                    <button
+                      type="button"
+                      className="font-serif text-sm text-gold-dim tracking-[0.08em] hover:text-gold-glow transition-colors"
+                      onClick={() => setShowFreeInput(true)}
+                      disabled={isDisabled}
+                    >
+                      另辟蹊径...
+                    </button>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      <label
+                        htmlFor="free-input"
+                        className="font-serif text-xs tracking-[0.12em] text-bone-mute"
+                      >
+                        自拟解法
+                      </label>
+                      <textarea
+                        id="free-input"
+                        className="w-full h-24 bg-paper-2 border border-hairline p-3 font-serif text-sm text-bone tracking-[0.04em] leading-relaxed resize-none focus:border-gold-dim focus:outline-none transition-colors placeholder:text-bone-mute"
+                        placeholder="描述你的创意解法..."
+                        value={freeText}
+                        onChange={(e) => setFreeText(e.target.value)}
+                        disabled={isDisabled}
+                        maxLength={500}
+                      />
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[10px] text-bone-mute">
+                          {freeText.length}/500
+                        </span>
+                        <button
+                          type="button"
+                          className="px-5 py-2 bg-gradient-to-b from-gold-dim to-gold-glow text-paper-0 font-serif text-sm tracking-[0.12em] transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                          onClick={handleFreeSubmit}
+                          disabled={isDisabled || !freeText.trim()}
+                        >
+                          {isDisabled ? "处理中..." : "提交"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </motion.div>
       </div>
     </AnimatePresence>
+  );
+}
+
+// In-world loading shell: "事起…" header, a shimmering title bar, and two greyed
+// choice placeholders. No bare spinner, no frozen frame (frontend/motion-patterns.md).
+function EventLoadingShell({ titleId }: { titleId: string }) {
+  return (
+    <div aria-label="事件酝酿中">
+      {/* Type label placeholder */}
+      <span className="font-mono text-[10px] tracking-[0.2em] text-vermillion uppercase">
+        事起…
+      </span>
+      <h2 id={titleId} className="sr-only">
+        事件酝酿中
+      </h2>
+
+      {/* Shimmering title bar */}
+      <div className="loading-shimmer h-[44px] w-2/3 mt-3 mb-4 rounded-sm" />
+
+      {/* Ink divider */}
+      <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-gold-dim to-transparent mb-5" />
+
+      {/* Shimmering body lines */}
+      <div className="flex flex-col gap-2.5 mb-8">
+        <div className="loading-shimmer h-3.5 w-full rounded-sm" />
+        <div className="loading-shimmer h-3.5 w-[92%] rounded-sm" />
+        <div className="loading-shimmer h-3.5 w-3/4 rounded-sm" />
+      </div>
+
+      {/* Greyed choice placeholders */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+        {[0, 1].map((i) => (
+          <div
+            key={i}
+            className="border border-hairline bg-paper-2/60 px-4 py-5 flex flex-col gap-2 opacity-70"
+            aria-hidden="true"
+          >
+            <div className="loading-shimmer h-3 w-1/3 rounded-sm" />
+            <div className="loading-shimmer h-3.5 w-full rounded-sm" />
+          </div>
+        ))}
+      </div>
+
+      <p className="font-serif text-xs text-bone-mute tracking-[0.12em]">
+        风云际会，正待分晓…
+      </p>
+    </div>
   );
 }

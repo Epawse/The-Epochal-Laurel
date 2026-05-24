@@ -7,24 +7,44 @@ import { buildV1Messages } from "../prompts";
 import { V1EventSchema, extractJsonObject, type V1Event, type V1Input, type Season } from "../schema";
 import { log } from "../../log";
 
+// One fresh model call + parse. A throw here is either an LLM/transport failure
+// or a JSON/Zod validation miss — the caller decides whether to retry or fall back.
+async function attemptEvent(input: V1Input): Promise<V1Event> {
+  const result = await callLLM("low", buildV1Messages(input), {
+    contract: "V1",
+    temperature: 0.8, // PT-V1
+    maxTokens: 800,
+    timeoutMs: 10_000, // global hard limit; DeepSeek non-thinking floor ~5s
+    softBudgetMs: 1500, // ai-contracts V1 latency budget (warn only)
+    responseFormat: "json",
+    thinking: false,
+  });
+  return V1EventSchema.parse(JSON.parse(extractJsonObject(result.content)));
+}
+
 export async function generateEvent(input: V1Input): Promise<V1Event> {
+  // ai-contracts.md V1: "Zod validation + retry on parse failure". The first
+  // attempt's failure is usually a model JSON/shape miss, so we re-call the model
+  // ONCE (a fresh generation, not a re-parse of the same content) before degrading
+  // to the static pool. This can ~double worst-case latency on failure, which is
+  // acceptable — correctness of the AI path matters more, and Step 3 moves this
+  // call off the critical path via prefetch.
   try {
-    const result = await callLLM("low", buildV1Messages(input), {
+    return await attemptEvent(input);
+  } catch (firstErr) {
+    log.warn("ai.retry", {
       contract: "V1",
-      temperature: 0.8, // PT-V1
-      maxTokens: 800,
-      timeoutMs: 10_000, // global hard limit; DeepSeek non-thinking floor ~5s
-      softBudgetMs: 1500, // ai-contracts V1 latency budget (warn only)
-      responseFormat: "json",
-      thinking: false,
+      reason: firstErr instanceof Error ? firstErr.message : String(firstErr),
     });
-    return V1EventSchema.parse(JSON.parse(extractJsonObject(result.content)));
-  } catch (err) {
-    log.warn("ai.fallback", {
-      contract: "V1",
-      reason: err instanceof Error ? err.message : String(err),
-    });
-    return staticEvent(input);
+    try {
+      return await attemptEvent(input);
+    } catch (secondErr) {
+      log.warn("ai.fallback", {
+        contract: "V1",
+        reason: secondErr instanceof Error ? secondErr.message : String(secondErr),
+      });
+      return staticEvent(input);
+    }
   }
 }
 

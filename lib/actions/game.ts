@@ -23,7 +23,9 @@ import { loadSave, createSave, upsertSave } from "@/lib/db/queries";
 import { generateEvent } from "@/lib/ai/contracts/event";
 import { evaluateEventFreeInput } from "@/lib/ai/contracts/eventEval";
 import { generateNpcDialogue } from "@/lib/ai/contracts/npcDialogue";
-import type { V1Input, N1Input } from "@/lib/ai/schema";
+import { nextSeason } from "@/lib/engine/reducer";
+import { log } from "@/lib/log";
+import type { V1Input, V1Event, N1Input } from "@/lib/ai/schema";
 
 // ── Template Narrations ───────────────────────────────────────────────────────
 
@@ -122,12 +124,78 @@ export async function loadGame(saveId: string): Promise<GameState | null> {
   return loadSave(saveId);
 }
 
+// ── Shared V1 event mapping ───────────────────────────────────────────────────
+
+// Build the V1 (random-event) input from a game state + event type. Shared by
+// advanceTurn (which now only stamps `pending_event_type`) and
+// generateEventForTurn (which actually calls the LLM) so the two never drift.
+function buildV1Input(state: GameState, eventType: EventType): V1Input {
+  return {
+    character: {
+      name: state.character.name,
+      age: state.character.age,
+      erudition: state.character.stats.erudition,
+      fortune: state.character.stats.fortune,
+      drive: state.character.stats.drive,
+      titles: state.character.titles,
+      traits: state.character.traits,
+    },
+    world: {
+      era: state.world.era,
+      season: state.world.season,
+      year: state.world.year,
+    },
+    event_type: eventType,
+    recent_events: state.world.events_this_era.slice(-3),
+    available_npcs: state.npcs
+      .filter((n) => n.alive)
+      .map((n) => ({ name: n.name, role: n.role })),
+    available_relic_pool: RELIC_CATALOG.map((relic) => relic.id),
+    character_skills: state.character.skills.map((skill) => skill.name),
+    character_relics: state.character.relics.map((relic) => relic.name),
+    world_modifier: state.world.world_modifiers[0]?.label ?? null,
+  };
+}
+
+// Map a generated V1 event onto the CurrentEvent save shape. Pure — does not
+// mutate state or push to events_this_era (callers own persistence side effects).
+function mapV1EventToCurrentEvent(
+  state: GameState,
+  eventType: EventType,
+  v1Event: V1Event
+): CurrentEvent {
+  return {
+    id: `evt_${state.turn_number}_${eventType}`,
+    type: eventType,
+    title: v1Event.title,
+    description: v1Event.description,
+    choices: v1Event.choices.map((c) => ({
+      id: c.id,
+      label: c.label,
+      stat_changes: c.stat_changes,
+      check: c.check ?? null,
+      risk: null,
+      narrative_hint: c.narrative_preview,
+    })),
+    allows_free_input: v1Event.allows_free_input,
+    context_for_judge: {
+      relevant_npcs: state.npcs.filter((n) => n.alive).map((n) => n.name),
+      relevant_items: state.character.inventory.map((i) => i.name),
+    },
+    reward: v1Event.reward ?? null,
+  };
+}
+
 // ── advanceTurn ───────────────────────────────────────────────────────────────
 
 export interface AdvanceTurnResult {
   state: GameState;
   narration: string;
   npcDialogue: string | null;
+  pendingNpcDialogue: boolean;
+  // When an event triggers, this is the event type and `state.current_event` is
+  // still null + `state.pending_event_type` is set: the client opens the event
+  // modal in a loading state and calls generateEventForTurn to fill it.
   eventTrigger: string | null;
   statChanges: { erudition: number; fortune: number; drive: number; wealth: number };
   schemeExposed: boolean;
@@ -150,6 +218,7 @@ export async function advanceTurn(
 
   // Update the RNG seed in the new state for next turn
   result.state.rng_seed = rng.nextInt(0, 2147483647);
+  result.state.pending_npc_dialogue = null;
 
   // Pick a narration template
   const narrations = ACTION_NARRATIONS[actionId] ?? ["时光流转。"];
@@ -162,8 +231,12 @@ export async function advanceTurn(
     narration = "东窗事发！" + narration + " 然而行迹败露，名声大损。";
   }
 
-  // NPC interactions on socialize/scheme
+  // NPC interactions on socialize/scheme. Socialize N1 dialogue is deferred:
+  // advanceTurn records which NPC should speak, then returns immediately. A
+  // follow-up server action generates the line and applies the N1 relationship
+  // delta so the player sees engine results without waiting on the LLM.
   let npcDialogue: string | null = null;
+  let pendingNpcDialogue = false;
   const npcRng = createRng(result.state.turn_number + 7777);
 
   if (actionId === "socialize") {
@@ -171,33 +244,13 @@ export async function advanceTurn(
     const aliveNpcs = result.state.npcs.filter((n) => n.alive);
     if (aliveNpcs.length > 0) {
       const targetNpc = aliveNpcs[npcRng.nextInt(0, aliveNpcs.length - 1)];
-      const dialogueInput: N1Input = {
-        npc: {
-          name: targetNpc.name,
-          role: targetNpc.role,
-          personality: targetNpc.personality,
-          memory: targetNpc.memory.map((m) => ({ event: m.event, sentiment: m.sentiment })),
-        },
-        character_name: result.state.character.name,
+      result.state.pending_npc_dialogue = {
+        npc_id: targetNpc.id,
+        turn_number: result.state.turn_number,
         interaction_type: "greeting",
-        world_context: {
-          era: result.state.world.era,
-          season: result.state.world.season,
-        },
       };
-      const dialogue = await generateNpcDialogue(dialogueInput);
-      npcDialogue = `${targetNpc.name}：「${dialogue.dialogue}」`;
-
-      // Apply relationship delta
-      const npcIdx = result.state.npcs.findIndex((n) => n.id === targetNpc.id);
-      if (npcIdx >= 0) {
-        addNpcMemory(result.state.npcs[npcIdx], "交游互动", "positive", result.state.turn_number);
-        // Update affinity in character relationships
-        const rel = result.state.character.relationships.find((r) => r.npc_id === targetNpc.id);
-        if (rel) {
-          rel.affinity = Math.max(-50, Math.min(100, rel.affinity + dialogue.relationship_delta));
-        }
-      }
+      pendingNpcDialogue = true;
+      npcDialogue = `${targetNpc.name}似有话说。`;
 
       // Court whims reveal via patron NPC
       if (targetNpc.role === "patron") {
@@ -240,6 +293,7 @@ export async function advanceTurn(
   }
 
   if (actionId === "scheme") {
+    result.state.pending_npc_dialogue = null;
     if (!result.state.world.court_whims_revealed.style_known) {
       result.state.world.court_whims_revealed.style_known = true;
       npcDialogue = npcDialogue
@@ -261,61 +315,14 @@ export async function advanceTurn(
     }
   }
 
-  // Generate event if triggered
+  // Event triggered: keep the LLM OFF the critical path. Stamp a pending marker
+  // and return immediately; the client opens a loading modal and calls
+  // generateEventForTurn to produce `current_event` from this marker.
   if (result.eventTrigger && !result.characterDied) {
-    const eventType = result.eventTrigger as EventType;
-    const v1Input: V1Input = {
-      character: {
-        name: result.state.character.name,
-        age: result.state.character.age,
-        erudition: result.state.character.stats.erudition,
-        fortune: result.state.character.stats.fortune,
-        drive: result.state.character.stats.drive,
-        titles: result.state.character.titles,
-        traits: result.state.character.traits,
-      },
-      world: {
-        era: result.state.world.era,
-        season: result.state.world.season,
-        year: result.state.world.year,
-      },
-      event_type: eventType,
-      recent_events: result.state.world.events_this_era.slice(-3),
-      available_npcs: result.state.npcs
-        .filter((n) => n.alive)
-        .map((n) => ({ name: n.name, role: n.role })),
-      available_relic_pool: RELIC_CATALOG.map((relic) => relic.id),
-      character_skills: result.state.character.skills.map((skill) => skill.name),
-      character_relics: result.state.character.relics.map((relic) => relic.name),
-      world_modifier: result.state.world.world_modifiers[0]?.label ?? null,
-    };
-
-    const v1Event = await generateEvent(v1Input);
-
-    // Map V1Event to CurrentEvent schema
-    const currentEvent: CurrentEvent = {
-      id: `evt_${result.state.turn_number}_${eventType}`,
-      type: eventType,
-      title: v1Event.title,
-      description: v1Event.description,
-      choices: v1Event.choices.map((c) => ({
-        id: c.id,
-        label: c.label,
-        stat_changes: c.stat_changes,
-        check: c.check ?? null,
-        risk: null,
-        narrative_hint: c.narrative_preview,
-      })),
-      allows_free_input: v1Event.allows_free_input,
-      context_for_judge: {
-        relevant_npcs: result.state.npcs.filter((n) => n.alive).map((n) => n.name),
-        relevant_items: result.state.character.inventory.map((i) => i.name),
-      },
-      reward: v1Event.reward ?? null,
-    };
-
-    result.state.current_event = currentEvent;
-    result.state.world.events_this_era.push(v1Event.title);
+    result.state.pending_event_type = result.eventTrigger as EventType;
+    result.state.current_event = null;
+  } else {
+    result.state.pending_event_type = null;
   }
 
   // Persist updated state
@@ -325,12 +332,235 @@ export async function advanceTurn(
     state: result.state,
     narration,
     npcDialogue,
+    pendingNpcDialogue,
     eventTrigger: result.eventTrigger,
     statChanges: result.statChanges,
     schemeExposed: result.schemeExposed,
     characterDied: result.characterDied,
     deathReason: result.deathReason,
     relicDraft: result.relicDraft,
+  };
+}
+
+// ── generateEventForTurn ──────────────────────────────────────────────────────
+
+export interface GenerateEventResult {
+  state: GameState;
+  event: CurrentEvent | null;
+  // True when the event was served from the background prefetch cache (no LLM on
+  // the critical path); false when it was live-generated as graceful fallback.
+  servedFromCache: boolean;
+}
+
+// Live-generate a mapped event for a state + type. Calls generateEvent (which
+// self-falls-back to a static event and never throws) and maps it onto the
+// CurrentEvent shape. Shared by generateEventForTurn (live fallback) and
+// prefetchEvents (background warm-up) so the produced shape never drifts.
+async function generateMappedEvent(
+  state: GameState,
+  eventType: EventType
+): Promise<CurrentEvent> {
+  const v1Input = buildV1Input(state, eventType);
+  const v1Event = await generateEvent(v1Input);
+  return mapV1EventToCurrentEvent(state, eventType, v1Event);
+}
+
+/**
+ * Produce the AI event for a turn whose engine result flagged a pending event.
+ * Called by the client right after advanceTurn returns with `eventTrigger` set.
+ *
+ * Serves from the background prefetch cache when `event_cache[pending_type]` is
+ * present AND its stamped season+era match the now-current values (zero LLM on
+ * the critical path). On a cache miss/stale stamp it live-generates via
+ * generateEvent (which self-falls-back to a static event — it never throws on AI
+ * failure). Either way it writes `current_event`, records the title for
+ * repetition-avoidance, clears the marker + consumed cache slot, and persists.
+ * A no-op (returns the unchanged state + null event) if there is no pending
+ * marker — e.g. a stale double-call after the event already filled.
+ */
+export async function generateEventForTurn(
+  saveId: string
+): Promise<GenerateEventResult> {
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
+
+  const eventType = currentState.pending_event_type;
+  if (!eventType) {
+    return { state: currentState, event: currentState.current_event, servedFromCache: false };
+  }
+
+  // Serve from prefetch cache only when the stamp matches the CURRENT season+era
+  // (season advances every turn, so a stamp targeting a different season is stale
+  // — e.g. era changed via inheritance between prefetch and use → live fallback).
+  const cached = currentState.event_cache[eventType];
+  const cacheHit =
+    cached !== undefined &&
+    cached.season === currentState.world.season &&
+    cached.era === currentState.world.era;
+
+  let currentEvent: CurrentEvent;
+  if (cacheHit && cached) {
+    currentEvent = cached.event;
+    // Consume the slot so a refill prefetch repopulates it with fresh context.
+    delete currentState.event_cache[eventType];
+    log.info("v1.serve", { source: "cache", eventType });
+  } else {
+    currentEvent = await generateMappedEvent(currentState, eventType);
+    log.info("v1.serve", { source: "live", eventType });
+  }
+
+  currentState.current_event = currentEvent;
+  currentState.world.events_this_era.push(currentEvent.title);
+  currentState.pending_event_type = null;
+
+  await upsertSave(saveId, currentState);
+
+  return { state: currentState, event: currentEvent, servedFromCache: cacheHit };
+}
+
+// ── prefetchEvents ────────────────────────────────────────────────────────────
+
+export interface PrefetchEventsResult {
+  // Event types that now have a cached entry (after this prefetch run).
+  cached: EventType[];
+  // True when prefetch was skipped because the player is mid-event.
+  skipped: boolean;
+}
+
+const ALL_EVENT_TYPES: EventType[] = ["opportunity", "misfortune", "social", "political"];
+
+/**
+ * Background warm-up: pre-generate one event per event type during player
+ * think-time so a triggered event is served from cache with ~0 wait.
+ *
+ * The client invokes this as its own non-blocking request (NOT fire-and-forget on
+ * the server — Vercel can kill unawaited work after the response). Skips entirely
+ * when an event is pending/open so it never clobbers in-flight state or wastes
+ * calls. Otherwise it predicts the next-turn context — `nextSeason(currentSeason)`
+ * (season advances every turn, so a prefetched event must reference the season the
+ * NEXT turn will be in to satisfy the V1 "reference current season/era"
+ * constraint) — and generates all 4 types in parallel against a shallow copy whose
+ * `world.season = targetSeason`. Before persisting, it reloads the save and only
+ * merges the cache into a still-idle state, preventing a slow prefetch response
+ * from overwriting a newer turn/event save. generateEvent self-falls-back and
+ * never throws, so Promise.all always resolves. Wall-time stays ~one call instead
+ * of ~4× serial.
+ */
+export async function prefetchEvents(saveId: string): Promise<PrefetchEventsResult> {
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
+
+  // Mid-event: do not prefetch (would clobber/waste while the player is choosing).
+  if (currentState.current_event || currentState.pending_event_type) {
+    return { cached: Object.keys(currentState.event_cache) as EventType[], skipped: true };
+  }
+
+  const targetSeason = nextSeason(currentState.world.season).season;
+  const targetEra = currentState.world.era;
+
+  // Shallow copy with the predicted next-turn season so buildV1Input references it.
+  const stateForPrefetch: GameState = {
+    ...currentState,
+    world: { ...currentState.world, season: targetSeason },
+  };
+
+  const generated = await Promise.all(
+    ALL_EVENT_TYPES.map((type) => generateMappedEvent(stateForPrefetch, type))
+  );
+
+  const latestState = await loadSave(saveId);
+  if (!latestState) throw new Error("save_not_found");
+  if (
+    latestState.turn_number !== currentState.turn_number ||
+    latestState.world.season !== currentState.world.season ||
+    latestState.world.era !== currentState.world.era ||
+    latestState.current_event ||
+    latestState.pending_event_type ||
+    latestState.pending_relic_draft
+  ) {
+    return { cached: Object.keys(latestState.event_cache) as EventType[], skipped: true };
+  }
+
+  for (let i = 0; i < ALL_EVENT_TYPES.length; i++) {
+    latestState.event_cache[ALL_EVENT_TYPES[i]] = {
+      event: generated[i],
+      season: targetSeason,
+      era: targetEra,
+    };
+  }
+
+  await upsertSave(saveId, latestState);
+  log.info("v1.prefetch", {
+    types: ALL_EVENT_TYPES.length,
+    season: targetSeason,
+    era: targetEra,
+  });
+
+  return { cached: [...ALL_EVENT_TYPES], skipped: false };
+}
+
+// ── generateNpcDialogueForTurn ───────────────────────────────────────────────
+
+export interface GenerateNpcDialogueResult {
+  state: GameState;
+  dialogue: string | null;
+}
+
+function buildN1Input(state: GameState, npc: Npc): N1Input {
+  return {
+    npc: {
+      name: npc.name,
+      role: npc.role,
+      personality: npc.personality,
+      memory: npc.memory.map((m) => ({ event: m.event, sentiment: m.sentiment })),
+    },
+    character_name: state.character.name,
+    interaction_type: state.pending_npc_dialogue?.interaction_type ?? "greeting",
+    world_context: {
+      era: state.world.era,
+      season: state.world.season,
+    },
+  };
+}
+
+/**
+ * Fill a deferred N1 NPC dialogue after advanceTurn has already returned its
+ * engine result. The N1 contract owns fallback, so AI/validation misses become a
+ * generic role-appropriate line instead of breaking the turn.
+ */
+export async function generateNpcDialogueForTurn(
+  saveId: string
+): Promise<GenerateNpcDialogueResult> {
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
+
+  const pending = currentState.pending_npc_dialogue;
+  if (!pending) {
+    return { state: currentState, dialogue: null };
+  }
+
+  const npc = currentState.npcs.find((candidate) => candidate.id === pending.npc_id);
+  if (!npc || !npc.alive || pending.turn_number !== currentState.turn_number) {
+    currentState.pending_npc_dialogue = null;
+    await upsertSave(saveId, currentState);
+    return { state: currentState, dialogue: null };
+  }
+
+  const dialogue = await generateNpcDialogue(buildN1Input(currentState, npc));
+  const npcIdx = currentState.npcs.findIndex((candidate) => candidate.id === npc.id);
+  if (npcIdx >= 0) {
+    addNpcMemory(currentState.npcs[npcIdx], "交游互动", "positive", currentState.turn_number);
+    const rel = currentState.character.relationships.find((r) => r.npc_id === npc.id);
+    if (rel) {
+      rel.affinity = Math.max(-50, Math.min(100, rel.affinity + dialogue.relationship_delta));
+    }
+  }
+  currentState.pending_npc_dialogue = null;
+  await upsertSave(saveId, currentState);
+
+  return {
+    state: currentState,
+    dialogue: `${npc.name}：「${dialogue.dialogue}」`,
   };
 }
 

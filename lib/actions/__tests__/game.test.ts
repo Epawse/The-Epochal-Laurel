@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   advanceTurn,
+  generateEventForTurn,
+  generateNpcDialogueForTurn,
+  prefetchEvents,
   chooseRelicDraft,
   generateHeirsAction,
   newGame,
@@ -8,9 +11,29 @@ import {
   previewNewGame,
   submitEventChoice,
 } from "../game";
-import { createCharacter } from "@/lib/engine/reducer";
+import { createCharacter, nextSeason } from "@/lib/engine/reducer";
 import { createRng } from "@/lib/engine/rng";
-import type { GameState } from "@/lib/game/schema";
+import { generateEvent } from "@/lib/ai/contracts/event";
+import { generateNpcDialogue } from "@/lib/ai/contracts/npcDialogue";
+import type { EventType } from "@/lib/game/constants";
+import type { CurrentEvent, GameState } from "@/lib/game/schema";
+
+// A minimal, schema-valid CurrentEvent for seeding the prefetch cache in tests.
+function makeCachedEvent(type: EventType, title: string): CurrentEvent {
+  return {
+    id: `cached_${type}`,
+    type,
+    title,
+    description: "缓存事件描述",
+    choices: [
+      { id: "a", label: "其一", stat_changes: { erudition: 0, fortune: 0, drive: 0, wealth: 0 }, check: null, risk: null, narrative_hint: "" },
+      { id: "b", label: "其二", stat_changes: { erudition: 0, fortune: 0, drive: 0, wealth: 0 }, check: null, risk: null, narrative_hint: "" },
+    ],
+    allows_free_input: false,
+    context_for_judge: { relevant_npcs: [], relevant_items: [] },
+    reward: null,
+  };
+}
 
 let mockState: GameState | null = null;
 
@@ -24,8 +47,22 @@ vi.mock("@/lib/ai/contracts/event", () => ({
   generateEvent: vi.fn(async () => ({
     title: "测试事件",
     description: "测试描述",
-    choices: [],
+    choices: [
+      {
+        id: "a",
+        label: "应对",
+        stat_changes: { erudition: 1, fortune: 0, drive: 0, wealth: 0 },
+        narrative_preview: "稳妥。",
+      },
+      {
+        id: "b",
+        label: "回避",
+        stat_changes: { erudition: 0, fortune: 1, drive: 0, wealth: 0 },
+        narrative_preview: "退守。",
+      },
+    ],
     allows_free_input: false,
+    free_input_context: "",
   })),
 }));
 
@@ -36,6 +73,8 @@ vi.mock("@/lib/ai/contracts/eventEval", () => ({
 vi.mock("@/lib/ai/contracts/npcDialogue", () => ({
   generateNpcDialogue: vi.fn(async () => ({
     dialogue: "久仰。",
+    mood: "friendly",
+    hint: null,
     relationship_delta: 5,
   })),
 }));
@@ -108,6 +147,71 @@ describe("game actions", () => {
 
     expect(result.state.world.court_whims_revealed.style_known).toBe(true);
     expect(result.npcDialogue).toContain("文风");
+  });
+
+  it("advanceTurn defers socialize NPC dialogue off the critical path", async () => {
+    vi.mocked(generateNpcDialogue).mockClear();
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.rng_seed = 5;
+    state.npcs = [
+      {
+        id: "npc_mentor",
+        name: "王文远",
+        role: "mentor",
+        personality: "warm",
+        era_introduced: state.world.era,
+        generation_introduced: state.character.generation,
+        alive: true,
+        memory: [],
+      },
+    ];
+    state.character.relationships = [
+      { npc_id: "npc_mentor", type: "mentor", affinity: 40 },
+    ];
+    mockState = state;
+
+    const result = await advanceTurn("test-save-id", "socialize");
+
+    expect(generateNpcDialogue).not.toHaveBeenCalled();
+    expect(result.pendingNpcDialogue).toBe(true);
+    expect(result.npcDialogue).toContain("似有话说");
+    expect(result.state.pending_npc_dialogue?.npc_id).toBe("npc_mentor");
+    expect(result.state.character.relationships[0].affinity).toBe(40);
+  });
+
+  it("generateNpcDialogueForTurn fills deferred dialogue and applies relationship delta", async () => {
+    vi.mocked(generateNpcDialogue).mockClear();
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.turn_number = 8;
+    state.npcs = [
+      {
+        id: "npc_mentor",
+        name: "王文远",
+        role: "mentor",
+        personality: "warm",
+        era_introduced: state.world.era,
+        generation_introduced: state.character.generation,
+        alive: true,
+        memory: [],
+      },
+    ];
+    state.character.relationships = [
+      { npc_id: "npc_mentor", type: "mentor", affinity: 40 },
+    ];
+    state.pending_npc_dialogue = {
+      npc_id: "npc_mentor",
+      turn_number: state.turn_number,
+      interaction_type: "greeting",
+    };
+    mockState = state;
+
+    const result = await generateNpcDialogueForTurn("test-save-id");
+
+    expect(generateNpcDialogue).toHaveBeenCalledTimes(1);
+    expect(result.dialogue).toBe("王文远：「久仰。」");
+    expect(result.state.pending_npc_dialogue).toBeNull();
+    expect(result.state.character.relationships[0].affinity).toBe(45);
+    expect(result.state.npcs[0].memory).toHaveLength(1);
   });
 
   it("allows palace victory to generate inheritance handoff data", async () => {
@@ -193,5 +297,203 @@ describe("game actions", () => {
     expect(result.roll).not.toBeNull();
     expect(result.narration).toBe("掷骰已决。");
     expect(result.state.current_event).toBeNull();
+  });
+
+  it("advanceTurn never calls the event LLM and only stamps a pending marker", async () => {
+    vi.mocked(generateEvent).mockClear();
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.rng_seed = 5;
+    mockState = state;
+
+    const result = await advanceTurn("test-save-id", "study");
+
+    // The LLM is OFF the critical path: advanceTurn must not call generateEvent.
+    expect(generateEvent).not.toHaveBeenCalled();
+
+    if (result.eventTrigger) {
+      // Triggered event is deferred: marker set, content not yet generated.
+      expect(result.state.pending_event_type).toBe(result.eventTrigger);
+      expect(result.state.current_event).toBeNull();
+    } else {
+      expect(result.state.pending_event_type).toBeNull();
+    }
+  });
+
+  it("generateEventForTurn produces current_event from the pending marker", async () => {
+    vi.mocked(generateEvent).mockClear();
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.turn_number = 4;
+    state.pending_event_type = "opportunity" as EventType;
+    state.current_event = null;
+    state.world.events_this_era = [];
+    mockState = state;
+
+    const result = await generateEventForTurn("test-save-id");
+
+    expect(generateEvent).toHaveBeenCalledTimes(1);
+    expect(result.event).not.toBeNull();
+    expect(result.event?.type).toBe("opportunity");
+    expect(result.event?.title).toBe("测试事件");
+    expect(result.event?.choices).toHaveLength(2);
+    expect(result.state.current_event).not.toBeNull();
+    // Marker cleared and title recorded for repetition-avoidance.
+    expect(result.state.pending_event_type).toBeNull();
+    expect(result.state.world.events_this_era).toContain("测试事件");
+  });
+
+  it("generateEventForTurn is a no-op when there is no pending event", async () => {
+    vi.mocked(generateEvent).mockClear();
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.pending_event_type = null;
+    state.current_event = null;
+    mockState = state;
+
+    const result = await generateEventForTurn("test-save-id");
+
+    expect(generateEvent).not.toHaveBeenCalled();
+    expect(result.event).toBeNull();
+    expect(result.state.current_event).toBeNull();
+  });
+
+  it("generateEventForTurn serves the cached event without calling the LLM on a stamp match", async () => {
+    vi.mocked(generateEvent).mockClear();
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.pending_event_type = "opportunity" as EventType;
+    state.current_event = null;
+    state.world.events_this_era = [];
+    const cached = makeCachedEvent("opportunity", "缓存机遇");
+    state.event_cache = {
+      opportunity: { event: cached, season: state.world.season, era: state.world.era },
+    };
+    mockState = state;
+
+    const result = await generateEventForTurn("test-save-id");
+
+    // Cache hit: the LLM contract must NOT be called.
+    expect(generateEvent).not.toHaveBeenCalled();
+    expect(result.servedFromCache).toBe(true);
+    expect(result.event).toEqual(cached);
+    expect(result.state.current_event).toEqual(cached);
+    // Consumed slot + cleared marker + recorded title.
+    expect(result.state.event_cache.opportunity).toBeUndefined();
+    expect(result.state.pending_event_type).toBeNull();
+    expect(result.state.world.events_this_era).toContain("缓存机遇");
+  });
+
+  it("generateEventForTurn live-generates when the cache slot is empty", async () => {
+    vi.mocked(generateEvent).mockClear();
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.pending_event_type = "opportunity" as EventType;
+    state.current_event = null;
+    state.event_cache = {};
+    mockState = state;
+
+    const result = await generateEventForTurn("test-save-id");
+
+    expect(generateEvent).toHaveBeenCalledTimes(1);
+    expect(result.servedFromCache).toBe(false);
+    expect(result.event?.title).toBe("测试事件");
+  });
+
+  it("generateEventForTurn falls back to live generation when the cached season is stale", async () => {
+    vi.mocked(generateEvent).mockClear();
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.pending_event_type = "opportunity" as EventType;
+    state.current_event = null;
+    state.world.season = "spring";
+    // Stamp targets a DIFFERENT season than the now-current one → stale.
+    const stale = makeCachedEvent("opportunity", "陈旧机遇");
+    state.event_cache = {
+      opportunity: { event: stale, season: "summer", era: state.world.era },
+    };
+    mockState = state;
+
+    const result = await generateEventForTurn("test-save-id");
+
+    expect(generateEvent).toHaveBeenCalledTimes(1);
+    expect(result.servedFromCache).toBe(false);
+    expect(result.event?.title).toBe("测试事件");
+  });
+
+  it("prefetchEvents populates all 4 type slots stamped with nextSeason(currentSeason)", async () => {
+    vi.mocked(generateEvent).mockClear();
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.current_event = null;
+    state.pending_event_type = null;
+    state.pending_relic_draft = null;
+    state.event_cache = {};
+    mockState = state;
+
+    const targetSeason = nextSeason(state.world.season).season;
+    const result = await prefetchEvents("test-save-id");
+
+    expect(result.skipped).toBe(false);
+    expect(result.cached.sort()).toEqual(
+      ["misfortune", "opportunity", "political", "social"]
+    );
+    // One generateEvent call per event type.
+    expect(generateEvent).toHaveBeenCalledTimes(4);
+    for (const type of ["opportunity", "misfortune", "social", "political"] as EventType[]) {
+      const entry = state.event_cache[type];
+      expect(entry).toBeDefined();
+      expect(entry?.season).toBe(targetSeason);
+      expect(entry?.era).toBe(state.world.era);
+      expect(entry?.event.type).toBe(type);
+    }
+  });
+
+  it("prefetchEvents skips when an event is pending", async () => {
+    vi.mocked(generateEvent).mockClear();
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.pending_event_type = "opportunity" as EventType;
+    state.current_event = null;
+    state.event_cache = {};
+    mockState = state;
+
+    const result = await prefetchEvents("test-save-id");
+
+    expect(result.skipped).toBe(true);
+    expect(generateEvent).not.toHaveBeenCalled();
+    expect(state.event_cache).toEqual({});
+  });
+
+  it("prefetchEvents does not overwrite a save that advanced while generation was in flight", async () => {
+    vi.mocked(generateEvent).mockClear();
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    state.current_event = null;
+    state.pending_event_type = null;
+    state.pending_relic_draft = null;
+    state.event_cache = {};
+    mockState = state;
+
+    vi.mocked(generateEvent).mockImplementation(async (input) => {
+      // Simulate the player taking another turn before the slow prefetch completes.
+      mockState = { ...structuredClone(mockState!), turn_number: mockState!.turn_number + 1 };
+      return {
+        title: `慢缓存${input.event_type}`,
+        description: "慢缓存描述",
+        choices: [
+          {
+            id: "a",
+            label: "应对",
+            stat_changes: { erudition: 0, fortune: 0, drive: 0, wealth: 0 },
+            narrative_preview: "",
+          },
+          {
+            id: "b",
+            label: "作罢",
+            stat_changes: { erudition: 0, fortune: 0, drive: 0, wealth: 0 },
+            narrative_preview: "",
+          },
+        ],
+        allows_free_input: false,
+        free_input_context: "",
+      };
+    });
+
+    const result = await prefetchEvents("test-save-id");
+
+    expect(result.skipped).toBe(true);
+    expect(mockState.event_cache).toEqual({});
   });
 });

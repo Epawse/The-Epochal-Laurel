@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import { TopBar } from "@/components/game/TopBar";
 import { StatPanel } from "@/components/game/StatPanel";
 import { ActionCard } from "@/components/game/ActionCard";
@@ -16,6 +17,9 @@ import { ERA_LABELS } from "@/lib/game/display";
 import type { GameState, StatChanges } from "@/lib/game/schema";
 import {
   advanceTurn,
+  generateEventForTurn,
+  generateNpcDialogueForTurn,
+  prefetchEvents,
   chooseRelicDraft as chooseRelicDraftAction,
   openMerchantShop,
   submitEventChoice,
@@ -107,7 +111,13 @@ export default function PlayPage() {
   );
   const [isPending, startTransition] = useTransition();
   const [schemeExposed, setSchemeExposed] = useState(false);
+  // True between a turn flagging a pending event and generateEventForTurn filling
+  // it — drives the EventModal's diegetic loading shell.
+  const [eventPending, setEventPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Guards background prefetch overlap: only one prefetchEvents request in flight
+  // at a time (each settle/resolve would otherwise stack 4-call bursts).
+  const prefetchInFlight = useRef(false);
   const currentGameState = gameState ?? persisted;
 
   useEffect(() => {
@@ -115,6 +125,34 @@ export default function PlayPage() {
       setSessionJSON("game_state", gameState);
     }
   }, [gameState]);
+
+  // Initial-load prefetch: warm the first batch of events once a save+state exist
+  // and the player is idle (no event/relic modal). Fires at most once per mount;
+  // later refills happen at turn-settle / event-resolve. Inlined here (not via
+  // firePrefetch, which is defined after the early return) to keep hook order
+  // valid; shares the same in-flight ref so it can't overlap a settle prefetch.
+  const initialPrefetchDone = useRef(false);
+  useEffect(() => {
+    if (initialPrefetchDone.current) return;
+    if (!saveId || !currentGameState) return;
+    if (
+      currentGameState.current_event ||
+      currentGameState.pending_event_type ||
+      currentGameState.pending_relic_draft
+    ) {
+      return;
+    }
+    if (prefetchInFlight.current) return;
+    initialPrefetchDone.current = true;
+    prefetchInFlight.current = true;
+    void prefetchEvents(saveId)
+      .catch((e) => {
+        console.warn("Failed to prefetch events:", e);
+      })
+      .finally(() => {
+        prefetchInFlight.current = false;
+      });
+  }, [saveId, currentGameState]);
 
   // If no game state, show loading/redirect message
   if (!currentGameState) {
@@ -142,6 +180,28 @@ export default function PlayPage() {
   const hasEvent = currentGameState.current_event !== null;
   const hasRelicDraft = currentGameState.pending_relic_draft !== null;
 
+  // Background prefetch trigger. Fired (non-blocking, never throwing into render)
+  // at safe points where the player is between turns and no modal is open:
+  // initial load, after a turn settles, and after an event resolves. Skips while
+  // any event/relic modal is open or pending, and guards against overlap so we
+  // never stack 4-call bursts. The server save is the source of truth for the
+  // cache — generateEventForTurn reads it; the client never mirrors event_cache.
+  function firePrefetch(state: GameState) {
+    if (!saveId) return;
+    if (prefetchInFlight.current) return;
+    if (state.current_event || state.pending_event_type || state.pending_relic_draft) {
+      return;
+    }
+    prefetchInFlight.current = true;
+    void prefetchEvents(saveId)
+      .catch((e) => {
+        console.warn("Failed to prefetch events:", e);
+      })
+      .finally(() => {
+        prefetchInFlight.current = false;
+      });
+  }
+
   function handleAction(actionId: string) {
     if (!currentGameState || !saveId || isPending) return;
 
@@ -149,10 +209,13 @@ export default function PlayPage() {
       setError(null);
       try {
         const result = await advanceTurn(saveId, actionId);
+        // Engine result is authoritative and arrives with NO LLM on the critical
+        // path — apply stat deltas + narration instantly.
         setGameState(result.state);
         setDeltas(result.statChanges);
 
-        // Show NPC dialogue if available, otherwise show action narration
+        // Show immediate, non-LLM narration first. Socialize NPC dialogue may be
+        // filled by a follow-up action below.
         if (result.npcDialogue) {
           setNarration(result.npcDialogue);
         } else {
@@ -167,6 +230,57 @@ export default function PlayPage() {
 
         // Clear deltas after animation
         setTimeout(() => setDeltas({}), 1500);
+
+        let settledState = result.state;
+
+        const shouldGenerateEvent =
+          result.eventTrigger &&
+          !result.characterDied &&
+          !settledState.current_event;
+
+        if (shouldGenerateEvent) {
+          setEventPending(true);
+        }
+
+        if (result.pendingNpcDialogue) {
+          try {
+            const dialogueResult = await generateNpcDialogueForTurn(saveId);
+            settledState = dialogueResult.state;
+            setGameState(dialogueResult.state);
+            if (dialogueResult.dialogue) {
+              setNarration(dialogueResult.dialogue);
+            }
+          } catch (dialogueErr) {
+            console.warn("Failed to generate NPC dialogue:", dialogueErr);
+          }
+        }
+
+        // Pending event: open the modal in its loading shell immediately, then
+        // fetch the AI event. `eventTrigger` is set while `current_event` is still
+        // null + `pending_event_type` is stamped on the returned state.
+        if (shouldGenerateEvent) {
+          try {
+            const eventResult = await generateEventForTurn(saveId);
+            settledState = eventResult.state;
+            setGameState(eventResult.state);
+          } catch (eventErr) {
+            // generateEvent self-falls-back to a static event and never throws,
+            // so reaching here means a transport/save failure. Clear the pending
+            // modal gracefully and surface the toast.
+            console.warn("Failed to generate turn event:", eventErr);
+            setError("暂时无法呈现这桩事，请稍后重试。");
+          } finally {
+            setEventPending(false);
+          }
+        }
+
+        // Refill the prefetch cache during the next think-time. Fires only when the
+        // player is now idle (no event/relic modal) and the character is alive;
+        // firePrefetch's own guards skip a mid-event/in-flight case. A cache hit
+        // this turn consumed one slot, so this tops the batch back up.
+        if (!result.characterDied) {
+          firePrefetch(settledState);
+        }
 
         // Death detection — trigger inheritance
         if (result.characterDied && result.deathReason) {
@@ -237,6 +351,9 @@ export default function PlayPage() {
         const draftText = result.relicDraft ? " 眼前又现三件奇物。" : "";
         setNarration(`${result.narration}${rollText}${draftText}`);
         setTimeout(() => setDeltas({}), 1500);
+        // Event resolved — refill the cache (a relic draft, if any, makes
+        // firePrefetch skip until that modal is also cleared).
+        firePrefetch(result.state);
       } catch (e) {
         console.warn("Failed to submit event choice:", e);
         setError("暂时无法处理事件选择，请稍后重试。");
@@ -253,6 +370,8 @@ export default function PlayPage() {
         const result = await submitEventFreeInput(saveId, text);
         setGameState(result.state);
         setNarration(result.narration);
+        // Event resolved — refill the cache for the next turn's think-time.
+        firePrefetch(result.state);
       } catch (e) {
         console.warn("Failed to submit event free input:", e);
         setError("暂时无法处理事件输入，请稍后重试。");
@@ -393,6 +512,28 @@ export default function PlayPage() {
             text={narration}
             timestamp={`${SEASON_LABELS[world.season]} · 第${world.year}年`}
           />
+
+          {/* Liveness indicator — every turn does at least engine work, and some
+              immediately continue into follow-up content fetches. Show a subtle
+              in-world "推演中…" so no turn ever looks like a frozen frame.
+              Fixed height + opacity-only animation avoids layout shift. */}
+          <div className="h-[18px] flex items-center" aria-live="polite">
+            <AnimatePresence>
+              {isPending && (
+                <motion.span
+                  key="advancing"
+                  className="inline-flex items-center gap-2 font-mono text-[10px] tracking-[0.18em] text-gold-dim uppercase"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-gold-dim animate-[danger-pulse_1.4s_ease-in-out_infinite]" />
+                  推演中…
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </div>
         </main>
 
         {/* Right Panel — Status */}
@@ -470,10 +611,12 @@ export default function PlayPage() {
       {/* Scheme Exposure Overlay */}
       {schemeExposed && <SchemeExposureOverlay />}
 
-      {/* Event Modal Overlay */}
-      {hasEvent && currentGameState.current_event && (
+      {/* Event Modal Overlay — opens in a loading shell the instant a turn flags
+          a pending event, then fills once generateEventForTurn returns. */}
+      {(hasEvent || eventPending) && (
         <EventModal
           event={currentGameState.current_event}
+          loading={eventPending && !hasEvent}
           onChoice={handleEventChoice}
           onFreeInput={handleEventFreeInput}
           onClose={handleEventClose}

@@ -19,23 +19,45 @@ export const StatChangesSchema = z.object({
 });
 export type StatChanges = z.infer<typeof StatChangesSchema>;
 
+// Per-contract delta caps. The base StatChangesSchema stays UNBOUNDED on purpose:
+// it is reused by the engine and by V2/exam-penalty paths with different caps, so
+// bounding the base would wrongly clamp those callers. Each contract instead layers
+// its own ±cap on top of the parsed object (ai-contracts.md: V1 ±15, V2 ±20).
+function boundStatChanges(max: number) {
+  return (value: StatChanges, ctx: z.RefinementCtx) => {
+    for (const [stat, delta] of Object.entries(value)) {
+      if (Math.abs(delta) > max) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `stat delta ${stat}=${delta} exceeds ±${max}`,
+          path: [stat],
+        });
+      }
+    }
+  };
+}
+
+// ±15 for V1 (event choices + dice-check outcomes); ±20 for V2 (free-input eval).
+const V1StatChangesSchema = StatChangesSchema.superRefine(boundStatChanges(15));
+const V2StatChangesSchema = StatChangesSchema.superRefine(boundStatChanges(20));
+
 // ── V1: Random Event Generation ─────────────────────────────────────────────
 
 export const V1DiceCheckSchema = z.object({
   stat: z.enum(["erudition", "fortune", "drive", "wealth"]),
   dc: z.number().int().min(6).max(16),
   outcomes: z.object({
-    crit_success: StatChangesSchema,
-    success: StatChangesSchema,
-    fail: StatChangesSchema,
-    crit_fail: StatChangesSchema,
+    crit_success: V1StatChangesSchema,
+    success: V1StatChangesSchema,
+    fail: V1StatChangesSchema,
+    crit_fail: V1StatChangesSchema,
   }),
 });
 
 export const V1EventChoiceSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
-  stat_changes: StatChangesSchema,
+  stat_changes: V1StatChangesSchema,
   narrative_preview: z.string().default(""),
   check: V1DiceCheckSchema.nullable().optional(),
 });
@@ -58,16 +80,42 @@ export const V1EventSchema = z.object({
 export type V1Event = z.infer<typeof V1EventSchema>;
 
 // LLMs sometimes wrap JSON in markdown fences or add stray prose despite
-// json_object mode (notably Gemini's beta OpenAI-compat layer). Pull out the
+// json_object mode (notably Gemini's beta OpenAI-compat layer, which has been
+// observed emitting valid JSON followed by trailing commentary). Pull out the
 // JSON body before JSON.parse so a cosmetic wrapper doesn't force a fallback.
 export function extractJsonObject(raw: string): string {
   let s = raw.trim();
+  // Strip a leading/trailing markdown code fence (```json ... ``` or ``` ... ```).
   const fence = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   if (fence) s = fence[1].trim();
+  // Scan for the FIRST balanced top-level object and ignore anything after it —
+  // tolerates trailing prose (Gemini "non-whitespace after JSON" case). String
+  // literals (which may contain unbalanced braces) are skipped via a quote/escape
+  // aware scan. Clean JSON passes through unchanged.
   const start = s.indexOf("{");
+  if (start < 0) return s;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+  // Unbalanced (truncated) — fall back to the widest slice; JSON.parse will throw
+  // and the caller's retry/fallback handles it.
   const end = s.lastIndexOf("}");
-  if (start >= 0 && end > start) return s.slice(start, end + 1);
-  return s;
+  return end > start ? s.slice(start, end + 1) : s;
 }
 
 // V1 input — built by the engine (ai-contracts.md V1 Input).
@@ -96,7 +144,7 @@ export interface V1Input {
 export const V2EventEvalSchema = z.object({
   success: z.boolean(),
   plausibility_score: z.number().int().min(0).max(100),
-  stat_changes: StatChangesSchema,
+  stat_changes: V2StatChangesSchema,
   narrative_result: z.string().max(200),
   npc_reaction: z
     .object({

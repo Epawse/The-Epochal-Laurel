@@ -70,7 +70,7 @@ import {
 
 const SEASON_ORDER: Season[] = ["spring", "summer", "autumn", "winter"];
 
-function nextSeason(current: Season): { season: Season; yearAdvanced: boolean } {
+export function nextSeason(current: Season): { season: Season; yearAdvanced: boolean } {
   const idx = SEASON_ORDER.indexOf(current);
   if (idx === 3) {
     return { season: "spring", yearAdvanced: true };
@@ -912,6 +912,9 @@ export function createCharacter(
     },
     npcs: [],
     current_event: null,
+    pending_event_type: null,
+    event_cache: {},
+    pending_npc_dialogue: null,
     pending_relic_draft: null,
     turn_number: 0,
     rng_seed: rng.nextInt(0, 2147483647),

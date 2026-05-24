@@ -18,6 +18,9 @@ describe("GameStateSchema", () => {
     delete character.modifiers;
     delete world.world_modifiers;
     delete dynasty.pending_heirloom;
+    delete oldSave.pending_event_type;
+    delete oldSave.event_cache;
+    delete oldSave.pending_npc_dialogue;
     delete oldSave.pending_relic_draft;
 
     const parsed = GameStateSchema.parse(oldSave);
@@ -29,6 +32,9 @@ describe("GameStateSchema", () => {
     expect(parsed.character.modifiers).toEqual([]);
     expect(parsed.world.world_modifiers).toEqual([]);
     expect(parsed.dynasty.pending_heirloom).toBeNull();
+    expect(parsed.pending_event_type).toBeNull();
+    expect(parsed.event_cache).toEqual({});
+    expect(parsed.pending_npc_dialogue).toBeNull();
     expect(parsed.pending_relic_draft).toBeNull();
   });
 

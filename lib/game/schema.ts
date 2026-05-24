@@ -30,6 +30,12 @@ export type ExamLevelId = z.infer<typeof ExamLevelSchema>;
 export const EventTypeSchema = z.enum(["opportunity", "misfortune", "social", "political"]);
 export type EventTypeId = z.infer<typeof EventTypeSchema>;
 
+export const SeasonSchema = z.enum(["spring", "summer", "autumn", "winter"]);
+export type SeasonId = z.infer<typeof SeasonSchema>;
+
+export const EraSchema = z.enum(["prosperity", "decline", "invasion", "restoration"]);
+export type EraId = z.infer<typeof EraSchema>;
+
 export const DiceCategorySchema = z.enum(["social", "scheme", "exam", "event"]);
 export type DiceCategory = z.infer<typeof DiceCategorySchema>;
 
@@ -398,6 +404,36 @@ export const CurrentEventSchema = z.object({
 });
 export type CurrentEvent = z.infer<typeof CurrentEventSchema>;
 
+// ── Prefetched Event Cache (Transient) ──────────────────────────────────────
+
+// One prefetched, fully-mapped event per event type, generated in the background
+// during player think-time so a triggered event is served with ~0 wait. Each entry
+// is stamped with the (predicted next-turn) season+era it was generated for;
+// generateEventForTurn only serves a slot whose stamp matches the now-current
+// season+era, otherwise it falls back to live generation. `.default({})` keeps
+// older saves (missing this field) loading fine.
+const CachedEventSchema = z.object({
+  event: CurrentEventSchema,
+  season: SeasonSchema,
+  era: EraSchema,
+});
+export type CachedEvent = z.infer<typeof CachedEventSchema>;
+
+export const EventCacheSchema = z.record(EventTypeSchema, CachedEventSchema).default({});
+export type EventCache = z.infer<typeof EventCacheSchema>;
+
+// ── Pending NPC Dialogue (Transient) ────────────────────────────────────────
+
+// Socialize can require an N1 dialogue call. The turn action persists this marker
+// and returns immediately; a follow-up action generates the line, applies the N1
+// relationship delta, and clears it.
+const PendingNpcDialogueSchema = z.object({
+  npc_id: z.string(),
+  turn_number: z.number().int().min(0),
+  interaction_type: z.enum(["greeting", "advice", "request", "gossip"]).default("greeting"),
+});
+export type PendingNpcDialogue = z.infer<typeof PendingNpcDialogueSchema>;
+
 // ── Complete Game State (Save Format) ───────────────────────────────────────
 
 export const GameStateSchema = z.object({
@@ -407,6 +443,18 @@ export const GameStateSchema = z.object({
   dynasty: DynastySchema,
   npcs: z.array(NpcSchema),
   current_event: CurrentEventSchema.nullable(),
+  // Marker for a triggered-but-not-yet-generated event. advanceTurn returns the
+  // synchronous engine result immediately (no LLM on the critical path) and stamps
+  // this; generateEventForTurn then produces current_event and clears it. Older
+  // saves missing this field default to null on load.
+  pending_event_type: EventTypeSchema.nullable().default(null),
+  // Background-prefetched events keyed by event type (see EventCacheSchema). Served
+  // by generateEventForTurn on a stamp match; refilled in the background after each
+  // turn/event. Older saves missing this field default to {} on load.
+  event_cache: EventCacheSchema,
+  // Marker for an N1 NPC dialogue that should be generated after advanceTurn has
+  // already returned. Older saves missing this field default to null on load.
+  pending_npc_dialogue: PendingNpcDialogueSchema.nullable().default(null),
   pending_relic_draft: RelicDraftSchema.nullable().default(null),
   turn_number: z.number().int().min(0),
   rng_seed: z.number().int(),

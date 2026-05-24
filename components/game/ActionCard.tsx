@@ -24,7 +24,7 @@ export function ActionCard({
   return (
     <button
       type="button"
-      className={`relative bg-paper-1 border border-hairline p-4 pt-4 pb-3.5 text-center min-h-[220px] flex flex-col items-center gap-2 transition-all duration-250 ease-out overflow-hidden ${
+      className={`relative bg-paper-1 border border-hairline p-3 md:p-4 md:pt-4 pb-3.5 text-center min-h-[170px] sm:min-h-[190px] md:min-h-[220px] flex flex-col items-center gap-2 transition-all duration-250 ease-out overflow-hidden ${
         isInteractive
           ? "cursor-pointer hover:-translate-y-[3px] hover:border-gold-dim hover:bg-paper-2"
           : ""
@@ -42,7 +42,7 @@ export function ActionCard({
 
       {/* Icon medallion */}
       <div
-        className={`w-24 h-24 rounded-full overflow-hidden bg-paper-bone grid place-items-center border border-hairline shadow-[inset_0_0_0_1px_rgba(201,165,90,0.18)] transition-transform duration-300 ease-out ${
+        className={`w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden bg-paper-bone grid place-items-center border border-hairline shadow-[inset_0_0_0_1px_rgba(201,165,90,0.18)] transition-transform duration-300 ease-out ${
           isInteractive ? "group-hover:scale-[1.04]" : ""
         } ${locked ? "bg-paper-2 relative" : ""}`}
       >
@@ -61,7 +61,7 @@ export function ActionCard({
 
       {/* Title */}
       <span
-        className={`font-serif text-xl tracking-[0.22em] mt-1 transition-colors duration-200 ${
+        className={`font-serif text-base sm:text-lg md:text-xl tracking-[0.14em] md:tracking-[0.22em] mt-1 transition-colors duration-200 ${
           locked ? "text-bone-mute" : "text-bone"
         }`}
       >

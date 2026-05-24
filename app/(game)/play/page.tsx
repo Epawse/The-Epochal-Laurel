@@ -9,6 +9,7 @@ import { NarrativeStrip } from "@/components/game/NarrativeStrip";
 import { CourtHint } from "@/components/game/CourtHint";
 import { EventModal } from "@/components/game/EventModal";
 import { SchemeExposureOverlay } from "@/components/game/SchemeExposureOverlay";
+import { ErrorToast } from "@/components/ui/ErrorToast";
 import { ACTIONS, highestTitleOf, EXAM_REQUIREMENTS, type ExamLevel } from "@/lib/game/constants";
 import type { GameState, StatChanges } from "@/lib/game/schema";
 import { advanceTurn, submitEventChoice, submitEventFreeInput, generateHeirsAction } from "@/lib/actions/game";
@@ -96,6 +97,7 @@ export default function PlayPage() {
   );
   const [isPending, startTransition] = useTransition();
   const [schemeExposed, setSchemeExposed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!synced && persisted !== null) {
     setSynced(true);
@@ -137,69 +139,75 @@ export default function PlayPage() {
     if (!gameState || !saveId || isPending) return;
 
     startTransition(async () => {
-      const result = await advanceTurn(saveId, actionId);
-      setGameState(result.state);
-      setDeltas(result.statChanges);
+      setError(null);
+      try {
+        const result = await advanceTurn(saveId, actionId);
+        setGameState(result.state);
+        setDeltas(result.statChanges);
 
-      // Show NPC dialogue if available, otherwise show action narration
-      if (result.npcDialogue) {
-        setNarration(result.npcDialogue);
-      } else {
-        setNarration(result.narration);
-      }
+        // Show NPC dialogue if available, otherwise show action narration
+        if (result.npcDialogue) {
+          setNarration(result.npcDialogue);
+        } else {
+          setNarration(result.narration);
+        }
 
-      // Detect scheme exposure
-      if (result.narration.includes("东窗事发") || result.narration.includes("败露")) {
-        setSchemeExposed(true);
-        setTimeout(() => setSchemeExposed(false), 2500);
-      }
+        // Detect scheme exposure
+        if (result.narration.includes("东窗事发") || result.narration.includes("败露")) {
+          setSchemeExposed(true);
+          setTimeout(() => setSchemeExposed(false), 2500);
+        }
 
-      // Clear deltas after animation
-      setTimeout(() => setDeltas({}), 1500);
+        // Clear deltas after animation
+        setTimeout(() => setDeltas({}), 1500);
 
-      // Death detection — trigger inheritance
-      if (result.characterDied && result.deathReason) {
-        // Brief delay to show the death narration before transitioning
-        setTimeout(async () => {
-          const heirsResult = await generateHeirsAction(saveId, result.deathReason!);
+        // Death detection — trigger inheritance
+        if (result.characterDied && result.deathReason) {
+          // Brief delay to show the death narration before transitioning
+          setTimeout(async () => {
+            const heirsResult = await generateHeirsAction(saveId, result.deathReason!);
 
-          if (heirsResult.gameOver) {
-            // Family line dies out — game over (F tier)
-            const { dynasty: dyn, character: char } = result.state;
-            const highTitle = highestTitleOf(char.titles);
-            const tier = "F";
-            const score = calculateScore(highTitle, tier, dyn.total_generations);
+            if (heirsResult.gameOver) {
+              // Family line dies out — game over (F tier)
+              const { dynasty: dyn, character: char } = result.state;
+              const highTitle = highestTitleOf(char.titles);
+              const tier = "F";
+              const score = calculateScore(highTitle, tier, dyn.total_generations);
 
-            // Record to leaderboard
-            await recordScore(dyn.family_name, tier, highTitle, dyn.total_generations, score);
+              // Record to leaderboard
+              await recordScore(dyn.family_name, tier, highTitle, dyn.total_generations, score);
 
-            // Set dynasty summary for leaderboard display
-            sessionStorage.setItem("dynasty_summary", JSON.stringify({
-              familyName: dyn.family_name,
-              tier,
-              highestTitle: highTitle,
-              generations: dyn.total_generations,
-              score,
+              // Set dynasty summary for leaderboard display
+              sessionStorage.setItem("dynasty_summary", JSON.stringify({
+                familyName: dyn.family_name,
+                tier,
+                highestTitle: highTitle,
+                generations: dyn.total_generations,
+                score,
+              }));
+
+              // Clear the game save
+              sessionStorage.removeItem("game_state");
+
+              router.push("/leaderboard");
+              return;
+            }
+
+            // Store inheritance data and navigate to inherit page
+            sessionStorage.setItem("inheritance_data", JSON.stringify({
+              state: result.state,
+              heirs: heirsResult.heirs,
+              legacyTokens: heirsResult.legacyTokens,
+              blessingPoints: heirsResult.blessingPoints,
+              isAdoption: heirsResult.isAdoption,
+              deathReason: heirsResult.deathReason,
             }));
-
-            // Clear the game save
-            sessionStorage.removeItem("game_state");
-
-            router.push("/leaderboard");
-            return;
-          }
-
-          // Store inheritance data and navigate to inherit page
-          sessionStorage.setItem("inheritance_data", JSON.stringify({
-            state: result.state,
-            heirs: heirsResult.heirs,
-            legacyTokens: heirsResult.legacyTokens,
-            blessingPoints: heirsResult.blessingPoints,
-            isAdoption: heirsResult.isAdoption,
-            deathReason: heirsResult.deathReason,
-          }));
-          router.push("/inherit");
-        }, 1500);
+            router.push("/inherit");
+          }, 1500);
+        }
+      } catch (e) {
+        console.warn("Failed to advance turn:", e);
+        setError("暂时无法保存本回合，请稍后重试。");
       }
     });
   }
@@ -208,9 +216,15 @@ export default function PlayPage() {
     if (!gameState || isPending) return;
 
     startTransition(async () => {
-      const result = await submitEventChoice(saveId!, choiceId);
-      setGameState(result.state);
-      setNarration(result.narration);
+      setError(null);
+      try {
+        const result = await submitEventChoice(saveId!, choiceId);
+        setGameState(result.state);
+        setNarration(result.narration);
+      } catch (e) {
+        console.warn("Failed to submit event choice:", e);
+        setError("暂时无法处理事件选择，请稍后重试。");
+      }
     });
   }
 
@@ -218,9 +232,15 @@ export default function PlayPage() {
     if (!gameState || isPending) return;
 
     startTransition(async () => {
-      const result = await submitEventFreeInput(saveId!, text);
-      setGameState(result.state);
-      setNarration(result.narration);
+      setError(null);
+      try {
+        const result = await submitEventFreeInput(saveId!, text);
+        setGameState(result.state);
+        setNarration(result.narration);
+      } catch (e) {
+        console.warn("Failed to submit event free input:", e);
+        setError("暂时无法处理事件输入，请稍后重试。");
+      }
     });
   }
 
@@ -230,6 +250,14 @@ export default function PlayPage() {
 
   return (
     <>
+      {error && (
+        <ErrorToast
+          message={error}
+          duration={0}
+          onDismiss={() => setError(null)}
+        />
+      )}
+
       {/* Era-conditional background */}
       <div
         className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat opacity-[0.08]"
@@ -249,7 +277,7 @@ export default function PlayPage() {
         generation={character.generation}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-[320px_1fr_320px] gap-4 md:gap-6 flex-1 min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] xl:grid-cols-[300px_1fr_300px] 2xl:grid-cols-[320px_1fr_320px] gap-4 md:gap-6 flex-1 min-h-0">
         {/* Left Panel — Stats */}
         <aside className="flex flex-col gap-4">
           <div className={isDanger ? "grayscale-[0.6]" : ""}>
@@ -287,7 +315,7 @@ export default function PlayPage() {
         {/* Center — Actions + Narrative */}
         <main className="flex flex-col gap-4 min-w-0">
           {/* Action cards grid */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 md:gap-3">
             {ACTIONS.map((action) => (
               <ActionCard
                 key={action.id}
@@ -307,7 +335,7 @@ export default function PlayPage() {
         </main>
 
         {/* Right Panel — Status */}
-        <aside className="flex flex-col gap-5">
+        <aside className="flex flex-col gap-4 md:gap-5 lg:col-span-2 xl:col-span-1 xl:col-start-auto md:grid md:grid-cols-3 xl:flex xl:flex-col">
           {/* Title display */}
           <div className="border border-hairline p-4 bg-paper-1">
             <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-2">

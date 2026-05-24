@@ -16,7 +16,7 @@ export function StatPanel({ portraitSrc, name, age, stats, deltas }: StatPanelPr
   return (
     <div className="relative">
       {/* Portrait */}
-      <div className="aspect-[3/4] w-full bg-ink border border-hairline overflow-hidden relative">
+      <div className="aspect-[3/4] w-full max-h-[360px] md:max-h-none bg-ink border border-hairline overflow-hidden relative">
         <div
           className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_30%,rgba(232,200,121,0.10),transparent_70%)]"
           aria-hidden="true"
@@ -34,7 +34,7 @@ export function StatPanel({ portraitSrc, name, age, stats, deltas }: StatPanelPr
         />
         {/* Character name overlay */}
         <div className="absolute left-3.5 bottom-3 z-[2]">
-          <span className="font-calli text-[28px] text-gold-glow tracking-[0.18em] drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
+          <span className="font-calli text-[24px] sm:text-[28px] text-gold-glow tracking-[0.12em] sm:tracking-[0.18em] drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
             {name}
           </span>
           <span className="block font-mono text-[10px] text-bone-dim tracking-[0.18em] mt-1">

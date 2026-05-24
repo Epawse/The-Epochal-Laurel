@@ -36,18 +36,18 @@ export function ErrorToast({
 
   return (
     <div
-      className="fixed top-6 left-1/2 -translate-x-1/2 z-[300] max-w-[90vw] w-auto"
+      className="fixed top-4 md:top-6 left-1/2 -translate-x-1/2 z-[300] max-w-[calc(100vw-2rem)] w-auto"
       role="alert"
       aria-live="assertive"
     >
-      <div className="flex items-center gap-3 px-5 py-3 bg-paper-2 border border-vermillion shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+      <div className="flex flex-wrap items-center gap-2 md:gap-3 px-4 md:px-5 py-3 bg-paper-2 border border-vermillion shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
         {/* Icon */}
         <span className="text-vermillion font-mono text-sm" aria-hidden="true">
           !
         </span>
 
         {/* Message */}
-        <span className="font-serif text-sm text-bone tracking-[0.04em]">
+        <span className="min-w-0 flex-1 font-serif text-sm text-bone tracking-[0.04em]">
           {message}
         </span>
 

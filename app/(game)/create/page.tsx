@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { TopBar } from "@/components/game/TopBar";
+import { ErrorToast } from "@/components/ui/ErrorToast";
 import { ORIGINS, type Origin, type OriginDef } from "@/lib/game/constants";
 import { newGame } from "@/lib/actions/game";
 import { setSaveId } from "@/lib/client/saveId";
@@ -24,7 +25,7 @@ function OriginCard({
     <button
       type="button"
       onClick={onSelect}
-      className={`relative bg-paper-1 border p-4 pt-4 pb-3.5 text-left cursor-pointer transition-all duration-250 flex flex-col gap-2.5 min-h-[240px] ${
+      className={`relative bg-paper-1 border p-3.5 md:p-4 md:pt-4 pb-3.5 text-left cursor-pointer transition-all duration-250 flex flex-col gap-2.5 min-h-[190px] md:min-h-[240px] ${
         selected
           ? "border-gold-glow bg-paper-2 shadow-[inset_0_0_0_1px_rgba(232,200,121,0.4),0_12px_30px_rgba(0,0,0,0.36)]"
           : "border-hairline hover:-translate-y-0.5 hover:border-gold-dim hover:bg-paper-2"
@@ -47,7 +48,7 @@ function OriginCard({
 
       {/* Title */}
       <h3
-        className={`font-serif text-[22px] tracking-[0.18em] m-0 ${
+        className={`font-serif text-[20px] md:text-[22px] tracking-[0.12em] md:tracking-[0.18em] m-0 ${
           selected ? "text-gold-glow" : "text-gold"
         }`}
       >
@@ -95,6 +96,7 @@ export default function CreatePage() {
   const router = useRouter();
   const [familyName, setFamilyName] = useState("");
   const [selectedOrigin, setSelectedOrigin] = useState<Origin | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const selectedDef = selectedOrigin ? ORIGINS[selectedOrigin] : null;
@@ -104,15 +106,30 @@ export default function CreatePage() {
     if (!selectedOrigin || isPending) return;
 
     startTransition(async () => {
-      const { id, state } = await newGame(familyName || "张", selectedOrigin);
-      setSaveId(id);
-      sessionStorage.setItem("game_state", JSON.stringify(state));
-      router.push("/play");
+      setError(null);
+      try {
+        const { id, state } = await newGame(familyName || "张", selectedOrigin);
+        setSaveId(id);
+        sessionStorage.setItem("game_state", JSON.stringify(state));
+        router.push("/play");
+      } catch (e) {
+        console.warn("Failed to create a new game:", e);
+        setError("暂时无法创建存档，请稍后重试。");
+      }
     });
   }
 
   return (
-    <div className="max-w-[1440px] mx-auto px-8 pb-8 min-h-screen flex flex-col">
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 md:px-8 pb-4 md:pb-8 min-h-screen flex flex-col">
+      {error && (
+        <ErrorToast
+          message={error}
+          duration={0}
+          onDismiss={() => setError(null)}
+          onRetry={handleConfirm}
+        />
+      )}
+
       <TopBar
         season="spring"
         year={1}
@@ -123,9 +140,9 @@ export default function CreatePage() {
         generation={1}
       />
 
-      <div className="grid grid-cols-[360px_1fr] gap-7 flex-1 min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] xl:grid-cols-[360px_1fr] gap-4 md:gap-6 lg:gap-7 flex-1 min-h-0">
         {/* Left column — Portrait */}
-        <div className="relative bg-paper-1 border border-hairline p-4 flex flex-col gap-3.5">
+        <div className="relative bg-paper-1 border border-hairline p-3.5 md:p-4 flex flex-col gap-3.5">
           {/* Corner brackets */}
           <i className="absolute top-1.5 left-1.5 w-3.5 h-3.5 border-t border-l border-gold-dim opacity-70 pointer-events-none" />
           <i className="absolute top-1.5 right-1.5 w-3.5 h-3.5 border-t border-r border-gold-dim opacity-70 pointer-events-none" />
@@ -133,7 +150,7 @@ export default function CreatePage() {
           <i className="absolute bottom-1.5 right-1.5 w-3.5 h-3.5 border-b border-r border-gold-dim opacity-70 pointer-events-none" />
 
           {/* Portrait frame */}
-          <div className="aspect-[3/4] bg-ink border border-hairline overflow-hidden relative">
+          <div className="aspect-[3/4] max-h-[360px] lg:max-h-none bg-ink border border-hairline overflow-hidden relative">
             <div
               className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_30%,rgba(232,200,121,0.10),transparent_70%)]"
               aria-hidden="true"
@@ -190,7 +207,7 @@ export default function CreatePage() {
         {/* Right column — Main */}
         <div className="relative flex flex-col gap-4 min-w-0">
           {/* Title */}
-          <h1 className="font-calli text-[44px] text-gold-glow tracking-[0.28em] m-0">
+          <h1 className="font-calli text-[34px] md:text-[44px] text-gold-glow tracking-[0.16em] md:tracking-[0.28em] m-0">
             择身出世
             <span className="block font-latin-serif italic text-base text-bone-mute tracking-[0.06em] mt-1">
               Choose Your Origin
@@ -203,7 +220,7 @@ export default function CreatePage() {
           </p>
 
           {/* Origin grid */}
-          <div className="grid grid-cols-4 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 md:gap-3.5">
             {originList.map((origin, i) => (
               <OriginCard
                 key={origin.id}
@@ -216,7 +233,7 @@ export default function CreatePage() {
           </div>
 
           {/* Footer */}
-          <div className="mt-auto flex items-center justify-between pt-3.5 border-t border-hairline">
+          <div className="mt-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3.5 border-t border-hairline">
             <span className="font-serif text-[13px] text-bone-mute tracking-[0.04em]">
               选择出身后，点击{" "}
               <b className="text-gold font-medium">入世求名</b> 开始你的科举之路
@@ -225,7 +242,7 @@ export default function CreatePage() {
               type="button"
               disabled={!canConfirm}
               onClick={handleConfirm}
-              className="px-8 py-3 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-lg tracking-[0.32em] transition-all duration-200 shadow-[0_4px_16px_rgba(196,57,44,0.2),inset_0_0_0_1px_rgba(232,200,121,0.2)] hover:brightness-108 hover:-translate-y-px disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:shadow-none disabled:cursor-not-allowed disabled:translate-y-0 disabled:brightness-100"
+              className="px-6 md:px-8 py-3 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-base md:text-lg tracking-[0.2em] md:tracking-[0.32em] transition-all duration-200 shadow-[0_4px_16px_rgba(196,57,44,0.2),inset_0_0_0_1px_rgba(232,200,121,0.2)] hover:brightness-108 hover:-translate-y-px disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:shadow-none disabled:cursor-not-allowed disabled:translate-y-0 disabled:brightness-100"
               aria-label="Confirm origin selection and begin"
             >
               {isPending ? "命运开启中..." : "入世求名"}

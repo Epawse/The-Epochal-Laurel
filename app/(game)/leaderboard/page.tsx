@@ -45,7 +45,7 @@ export default function LeaderboardPage() {
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col gap-8 max-w-[960px] mx-auto w-full py-8 px-6">
+    <div className="flex-1 flex flex-col gap-6 md:gap-8 max-w-[960px] mx-auto w-full py-6 md:py-8 px-4 md:px-6">
       {/* Header */}
       <header className="text-center">
         <span className="font-mono text-[10px] tracking-[0.3em] text-vermillion uppercase block mb-2">
@@ -61,8 +61,8 @@ export default function LeaderboardPage() {
 
       {/* Dynasty Summary Card */}
       {dynastySummary && (
-        <section className="border border-gold-dim bg-paper-1 p-6">
-          <div className="grid grid-cols-[120px_1fr] gap-6">
+        <section className="border border-gold-dim bg-paper-1 p-4 md:p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-4 md:gap-6">
             {/* Left: Seal */}
             <div className="flex flex-col items-center justify-center gap-3">
               <div className="relative w-[88px] h-[88px]">
@@ -87,7 +87,7 @@ export default function LeaderboardPage() {
                 <StatusBadge tier={dynastySummary.tier} />
               </div>
 
-              <div className="grid grid-cols-3 gap-4 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mt-2">
                 <div>
                   <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase block">
                     HIGHEST TITLE
@@ -151,9 +151,9 @@ export default function LeaderboardPage() {
             </p>
           </div>
         ) : (
-          <div className="border border-hairline bg-paper-1 overflow-hidden">
+          <div className="border border-hairline bg-paper-1 overflow-x-auto">
             {/* Table header */}
-            <div className="grid grid-cols-[60px_1fr_60px_100px_80px_80px] gap-2 px-4 py-2.5 border-b border-hairline bg-paper-2">
+            <div className="grid min-w-[680px] grid-cols-[60px_1fr_60px_100px_80px_80px] gap-2 px-4 py-2.5 border-b border-hairline bg-paper-2">
               <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase">
                 RANK
               </span>
@@ -186,7 +186,7 @@ export default function LeaderboardPage() {
               return (
                 <div
                   key={`${entry.family_name}-${idx}`}
-                  className={`relative grid grid-cols-[60px_1fr_60px_100px_80px_80px] gap-2 px-4 py-3 border-b border-hairline-soft last:border-b-0 transition-colors ${
+                  className={`relative grid min-w-[680px] grid-cols-[60px_1fr_60px_100px_80px_80px] gap-2 px-4 py-3 border-b border-hairline-soft last:border-b-0 transition-colors ${
                     isPlayer
                       ? "bg-[rgba(196,57,44,0.06)]"
                       : "hover:bg-paper-2"
@@ -259,16 +259,16 @@ export default function LeaderboardPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-hairline pt-6 flex items-center justify-center gap-4">
+      <footer className="border-t border-hairline pt-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-4">
         <Link
           href="/create"
-          className="px-6 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.22em] transition-all duration-200 hover:brightness-108"
+          className="px-6 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.16em] sm:tracking-[0.22em] text-center transition-all duration-200 hover:brightness-108"
         >
           再开一世
         </Link>
         <Link
           href="/play"
-          className="px-6 py-2.5 border border-hairline bg-paper-2 font-serif text-sm text-bone tracking-[0.12em] hover:border-gold-dim transition-colors"
+          className="px-6 py-2.5 border border-hairline bg-paper-2 font-serif text-sm text-bone tracking-[0.12em] text-center hover:border-gold-dim transition-colors"
         >
           回到日常
         </Link>

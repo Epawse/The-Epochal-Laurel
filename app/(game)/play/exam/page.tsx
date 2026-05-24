@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ScrollFramePanel } from "@/components/ui/ScrollFramePanel";
 import { ExamChoice } from "@/components/game/ExamChoice";
 import { ResultOverlay } from "@/components/game/ResultOverlay";
+import { ErrorToast } from "@/components/ui/ErrorToast";
 import { getExamQuestion, submitExamAnswer, submitPalaceExam, applyToolAction } from "@/lib/actions/game";
 import type { GameState } from "@/lib/game/schema";
 import type { ExamLevel } from "@/lib/game/constants";
@@ -36,6 +37,7 @@ export default function ExamPage() {
   const [cheatSheetActive, setCheatSheetActive] = useState(false);
   const [insiderTipChoice, setInsiderTipChoice] = useState<string | null>(null);
   const [toolMessage, setToolMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Hydrate from the persisted save once + derive the exam level (render-time sync).
   if (!synced && persisted !== null) {
@@ -83,29 +85,35 @@ export default function ExamPage() {
     if (!selectedChoice && !freeText.trim()) return;
 
     startSubmit(async () => {
-      if (examLevel === "palace") {
-        const palaceResult = await submitPalaceExam(
-          saveId!,
-          question,
-          freeText.trim() ? null : selectedChoice,
-          freeText.trim() || null,
-          cheatSheetActive
-        );
-        sessionStorage.setItem("palace_result", JSON.stringify(palaceResult));
-        sessionStorage.setItem("game_state", JSON.stringify(palaceResult.state));
-        router.push("/palace");
-      } else {
-        const result = await submitExamAnswer(
-          saveId!,
-          examLevel,
-          question,
-          freeText.trim() ? null : selectedChoice,
-          freeText.trim() || null,
-          cheatSheetActive
-        );
-        setExamResult(result);
-        setGameState(result.state);
-        sessionStorage.setItem("game_state", JSON.stringify(result.state));
+      setError(null);
+      try {
+        if (examLevel === "palace") {
+          const palaceResult = await submitPalaceExam(
+            saveId!,
+            question,
+            freeText.trim() ? null : selectedChoice,
+            freeText.trim() || null,
+            cheatSheetActive
+          );
+          sessionStorage.setItem("palace_result", JSON.stringify(palaceResult));
+          sessionStorage.setItem("game_state", JSON.stringify(palaceResult.state));
+          router.push("/palace");
+        } else {
+          const result = await submitExamAnswer(
+            saveId!,
+            examLevel,
+            question,
+            freeText.trim() ? null : selectedChoice,
+            freeText.trim() || null,
+            cheatSheetActive
+          );
+          setExamResult(result);
+          setGameState(result.state);
+          sessionStorage.setItem("game_state", JSON.stringify(result.state));
+        }
+      } catch (e) {
+        console.warn("Failed to submit exam:", e);
+        setError("暂时无法保存考试结果，请稍后重试。");
       }
     });
   }
@@ -118,10 +126,18 @@ export default function ExamPage() {
   async function handleUseTool(toolId: string) {
     if (!gameState || !question) return;
 
-    const result: ToolResult = await applyToolAction(saveId!, toolId, {
-      examLevel,
-      question,
-    });
+    setError(null);
+    let result: ToolResult;
+    try {
+      result = await applyToolAction(saveId!, toolId, {
+        examLevel,
+        question,
+      });
+    } catch (e) {
+      console.warn("Failed to use exam tool:", e);
+      setError("暂时无法使用该道具，请稍后重试。");
+      return;
+    }
 
     setToolMessage(result.message);
     setGameState(result.state);
@@ -159,6 +175,14 @@ export default function ExamPage() {
 
   return (
     <>
+      {error && (
+        <ErrorToast
+          message={error}
+          duration={0}
+          onDismiss={() => setError(null)}
+        />
+      )}
+
       {/* Background */}
       <div
         className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat"
@@ -184,17 +208,17 @@ export default function ExamPage() {
       )}
 
       {/* Main exam content */}
-      <div className="flex-1 flex flex-col items-center justify-center py-8">
+      <div className="flex-1 flex flex-col items-center justify-center py-4 md:py-8 px-3 md:px-0">
         <ScrollFramePanel>
           {/* Header */}
           <div className="mb-6">
             <span className="font-mono text-[9px] tracking-[0.18em] text-vermillion uppercase block mb-1">
               IMPERIAL EXAMINATION
             </span>
-            <h1 className="font-calli text-[38px] text-gold-glow tracking-[0.18em] leading-tight">
+            <h1 className="font-calli text-[32px] md:text-[38px] text-gold-glow tracking-[0.12em] md:tracking-[0.18em] leading-tight">
               {EXAM_LEVEL_LABELS[examLevel]}
             </h1>
-            <div className="flex items-center gap-3 mt-2 font-mono text-[10px] text-bone-mute tracking-[0.08em]">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 font-mono text-[10px] text-bone-mute tracking-[0.08em]">
               <span>第{gameState.world.year}年</span>
               <span>·</span>
               <span>学识 {gameState.character.stats.erudition}/100</span>
@@ -205,7 +229,7 @@ export default function ExamPage() {
           </div>
 
           {/* Question */}
-          <div className="border-l-2 border-vermillion pl-4 mb-6">
+          <div className="border-l-2 border-vermillion pl-3 md:pl-4 mb-6">
             <p className="font-serif text-[17px] text-bone leading-[1.85] tracking-[0.04em]">
               {question.question_text}
             </p>
@@ -240,7 +264,7 @@ export default function ExamPage() {
 
           {/* Free text input */}
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
               <span className="font-serif text-xs text-bone-mute tracking-[0.06em]">
                 或自拟答案（{question.free_input_hint}）
               </span>
@@ -262,7 +286,7 @@ export default function ExamPage() {
 
           {/* Tools section — NOT available in palace exam (殿试) */}
           {examLevel !== "palace" && (
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-4">
             <button
               type="button"
               onClick={() => handleUseTool("cheat_sheet")}
@@ -290,7 +314,7 @@ export default function ExamPage() {
           )}
 
           {/* Footer */}
-          <div className="flex items-center justify-between pt-4 border-t border-hairline">
+          <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-hairline">
             <button
               type="button"
               onClick={() => router.push("/play")}
@@ -302,7 +326,7 @@ export default function ExamPage() {
               type="button"
               onClick={handleSubmit}
               disabled={!canSubmit}
-              className="px-6 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.22em] transition-all duration-200 disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:cursor-not-allowed disabled:bg-none"
+              className="px-6 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.18em] sm:tracking-[0.22em] transition-all duration-200 disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:cursor-not-allowed disabled:bg-none"
             >
               {isSubmitting ? "阅卷中..." : "交卷"}
             </button>

@@ -9,6 +9,7 @@ import type { I1Heirs } from "@/lib/ai/schema";
 import type { LegacyTokens } from "@/lib/engine/inheritance";
 import { chooseHeir, type InheritanceTrigger } from "@/lib/actions/game";
 import { EraTransition } from "@/components/game/EraTransition";
+import { ErrorToast } from "@/components/ui/ErrorToast";
 import { useSessionJSON } from "@/hooks/useSessionJSON";
 import { getSaveId } from "@/lib/client/saveId";
 
@@ -68,6 +69,7 @@ export default function InheritPage() {
     to: Era;
   } | null>(null);
   const [newState, setNewState] = useState<GameState | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // No inheritance context → back to the daily loop.
   useEffect(() => {
@@ -133,28 +135,34 @@ export default function InheritPage() {
       const currentSaveId = getSaveId();
       if (!currentSaveId) return;
       const selectedHeirData = heirs[selectedHeir];
-      const result = await chooseHeir(
-        currentSaveId,
-        selectedHeir,
-        Array.from(purchasedBlessings),
-        selectedHeirData ? {
-          name: selectedHeirData.name,
-          traits: selectedHeirData.traits,
-          starting_bonus: selectedHeirData.starting_bonus,
-        } : undefined
-      );
+      setError(null);
+      try {
+        const result = await chooseHeir(
+          currentSaveId,
+          selectedHeir,
+          Array.from(purchasedBlessings),
+          selectedHeirData ? {
+            name: selectedHeirData.name,
+            traits: selectedHeirData.traits,
+            starting_bonus: selectedHeirData.starting_bonus,
+          } : undefined
+        );
 
-      if (result.eraTransitioned && result.newEra) {
-        setNewState(result.state);
-        setEraTransition({
-          from: result.oldEra as Era,
-          to: result.newEra as Era,
-        });
-      } else {
-        // No era transition, go directly to play
-        sessionStorage.setItem("game_state", JSON.stringify(result.state));
-        sessionStorage.removeItem("inheritance_data");
-        router.push("/play");
+        if (result.eraTransitioned && result.newEra) {
+          setNewState(result.state);
+          setEraTransition({
+            from: result.oldEra as Era,
+            to: result.newEra as Era,
+          });
+        } else {
+          // No era transition, go directly to play
+          sessionStorage.setItem("game_state", JSON.stringify(result.state));
+          sessionStorage.removeItem("inheritance_data");
+          router.push("/play");
+        }
+      } catch (e) {
+        console.warn("Failed to choose heir:", e);
+        setError("暂时无法保存传承结果，请稍后重试。");
       }
     });
   }
@@ -179,7 +187,15 @@ export default function InheritPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col gap-8 max-w-[1320px] mx-auto w-full py-8 px-6 overflow-y-auto">
+    <div className="flex-1 flex flex-col gap-6 md:gap-8 max-w-[1320px] mx-auto w-full py-6 md:py-8 px-4 md:px-6 overflow-y-auto">
+      {error && (
+        <ErrorToast
+          message={error}
+          duration={0}
+          onDismiss={() => setError(null)}
+        />
+      )}
+
       {/* Header */}
       <header className="text-center">
         <span className="font-mono text-[10px] tracking-[0.3em] text-vermillion uppercase block mb-2">
@@ -194,13 +210,13 @@ export default function InheritPage() {
       </header>
 
       {/* Ancestor Card */}
-      <section className="border border-hairline bg-paper-1 p-6">
+      <section className="border border-hairline bg-paper-1 p-4 md:p-6">
         <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-4">
           ANCESTOR
         </span>
-        <div className="grid grid-cols-[180px_1fr] gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] lg:grid-cols-[180px_1fr] gap-4 md:gap-6">
           {/* Portrait */}
-          <div className="relative aspect-[3/4] bg-paper-2 border border-hairline overflow-hidden">
+          <div className="relative aspect-[3/4] max-h-[280px] sm:max-h-none bg-paper-2 border border-hairline overflow-hidden">
             <img
               src={getPortraitSrc(character.age)}
               alt={character.name}
@@ -214,7 +230,7 @@ export default function InheritPage() {
 
           {/* Meta */}
           <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <span className="font-mono text-[9px] text-bone-mute tracking-[0.12em] uppercase block">
                   LIFESPAN
@@ -251,7 +267,7 @@ export default function InheritPage() {
 
             {/* Stats at death */}
             <div className="mt-2 pt-3 border-t border-dashed border-hairline">
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div className="text-center">
                   <span className="font-mono text-[9px] text-bone-mute block">ERU</span>
                   <span className="font-serif text-sm text-bone">{character.stats.erudition}</span>
@@ -279,7 +295,7 @@ export default function InheritPage() {
         <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-3">
           LEGACY TOKENS
         </span>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <TokenCard label="藏书" value={legacyTokens.books} note="学识传承" />
           <TokenCard label="田产" value={legacyTokens.land} note="家业根基" />
           <TokenCard label="声望" value={legacyTokens.reputation} note="门第名望" />
@@ -292,7 +308,7 @@ export default function InheritPage() {
         <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-3">
           {isAdoption ? "ADOPTED HEIR" : "HEIR CANDIDATES"}
         </span>
-        <div className={`grid gap-4 ${heirs.length === 1 ? "grid-cols-1 max-w-[400px]" : heirs.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+        <div className={`grid gap-4 ${heirs.length === 1 ? "grid-cols-1 max-w-[400px]" : heirs.length === 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 md:grid-cols-3"}`}>
           {heirs.map((heir, index) => (
             <HeirCard
               key={index}
@@ -311,7 +327,7 @@ export default function InheritPage() {
         <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-3">
           ANCESTRAL BLESSINGS
         </span>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {BLESSINGS.map((blessing) => (
             <BlessingCard
               key={blessing.id}
@@ -325,7 +341,7 @@ export default function InheritPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-hairline pt-6 flex items-center justify-between">
+      <footer className="border-t border-hairline pt-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="font-serif text-sm text-bone-mute tracking-[0.06em]">
           {selectedHeir !== null ? (
             <span>
@@ -344,7 +360,7 @@ export default function InheritPage() {
           type="button"
           disabled={selectedHeir === null || isPending}
           onClick={handleConfirm}
-          className="px-8 py-3 bg-gradient-to-b from-gold-dim to-[#6b5530] text-bone border border-gold-dim font-serif text-base tracking-[0.22em] transition-all duration-200 disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:cursor-not-allowed disabled:bg-none"
+          className="px-6 md:px-8 py-3 bg-gradient-to-b from-gold-dim to-[#6b5530] text-bone border border-gold-dim font-serif text-base tracking-[0.16em] md:tracking-[0.22em] transition-all duration-200 disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:cursor-not-allowed disabled:bg-none"
         >
           {isPending ? "传承中..." : "开启新篇"}
         </button>
@@ -367,7 +383,7 @@ function TokenCard({
   highlight?: boolean;
 }) {
   return (
-    <div className={`border p-4 ${highlight ? "border-gold-dim bg-[rgba(201,165,90,0.06)]" : "border-hairline bg-paper-1"}`}>
+    <div className={`border p-3.5 md:p-4 ${highlight ? "border-gold-dim bg-[rgba(201,165,90,0.06)]" : "border-hairline bg-paper-1"}`}>
       <span className="font-serif text-sm text-bone-mute tracking-[0.06em] block">
         {label}
       </span>
@@ -401,7 +417,7 @@ function HeirCard({
     <button
       type="button"
       onClick={onClick}
-      className={`relative border p-5 text-left transition-all duration-200 cursor-pointer flex flex-col gap-3 ${
+      className={`relative border p-4 md:p-5 text-left transition-all duration-200 cursor-pointer flex flex-col gap-3 ${
         selected
           ? "border-gold bg-[rgba(201,165,90,0.08)] shadow-[0_0_12px_rgba(201,165,90,0.15)]"
           : "border-hairline bg-paper-1 hover:border-gold-dim hover:-translate-y-0.5"

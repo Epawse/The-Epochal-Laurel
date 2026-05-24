@@ -1,11 +1,6 @@
 # Developer identity (local only)
 .developer
 
-# OS files
-.DS_Store
-**/.DS_Store
-Thumbs.db
-
 # Current task pointer (each dev works on different task)
 .current-task
 

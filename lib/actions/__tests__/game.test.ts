@@ -2,13 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import { advanceTurn, generateHeirsAction } from "../game";
 import { createCharacter } from "@/lib/engine/reducer";
 import { createRng } from "@/lib/engine/rng";
+import type { GameState } from "@/lib/game/schema";
 
-vi.mock("@/lib/db/client", () => ({
-  getSessionId: vi.fn(async () => "test-session"),
-}));
+let mockState: GameState | null = null;
 
 vi.mock("@/lib/db/queries", () => ({
-  loadSave: vi.fn(async () => null),
+  loadSave: vi.fn(async () => mockState),
+  createSave: vi.fn(async () => "test-save-id"),
   upsertSave: vi.fn(async () => undefined),
 }));
 
@@ -54,8 +54,9 @@ describe("game actions", () => {
     state.character.stats.fortune = 0;
     state.npcs = [];
     state.character.relationships = [];
+    mockState = state;
 
-    const result = await advanceTurn(state, "socialize");
+    const result = await advanceTurn("test-save-id", "socialize");
 
     const newFriends = result.state.npcs.filter((npc) => npc.role === "friend");
     expect(newFriends.length).toBe(1);
@@ -68,8 +69,9 @@ describe("game actions", () => {
     state.character.family.children = [
       { name: "陈承志", born_year: state.world.year - 16, is_son: true, alive: true },
     ];
+    mockState = state;
 
-    const result = await generateHeirsAction(state, "victory");
+    const result = await generateHeirsAction("test-save-id", "victory");
 
     expect(result.gameOver).toBe(false);
     expect(result.deathReason).toBe("victory");

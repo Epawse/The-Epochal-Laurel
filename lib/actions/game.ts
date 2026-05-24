@@ -5,8 +5,7 @@ import type { Origin, ExamLevel, EventType } from "@/lib/game/constants";
 import { createCharacter, advanceSeason, applyEventChoice } from "@/lib/engine/reducer";
 import { createRng } from "@/lib/engine/rng";
 import { applyStatChanges } from "@/lib/engine/balance";
-import { getSessionId } from "@/lib/db/client";
-import { loadSave, upsertSave } from "@/lib/db/queries";
+import { loadSave, createSave, upsertSave } from "@/lib/db/queries";
 import { generateEvent } from "@/lib/ai/contracts/event";
 import { evaluateEventFreeInput } from "@/lib/ai/contracts/eventEval";
 import { generateNpcDialogue } from "@/lib/ai/contracts/npcDialogue";
@@ -60,27 +59,26 @@ const NPC_PERSONALITIES = ["strict", "warm", "corrupt", "idealistic"] as const;
 
 // ── newGame ───────────────────────────────────────────────────────────────────
 
+export interface NewGameResult {
+  id: string;
+  state: GameState;
+}
+
 export async function newGame(
   familyName: string,
   origin: Origin
-): Promise<GameState> {
-  const sessionId = await getSessionId();
-
-  // Use a time-based seed for initial RNG
+): Promise<NewGameResult> {
   const seed = Date.now() % 2147483647;
   const rng = createRng(seed);
-
   const state = createCharacter(familyName || "张", origin, rng);
+  const id = await createSave(state);
+  return { id, state };
+}
 
-  // Persist to database
-  try {
-    await upsertSave(sessionId, state);
-  } catch (e) {
-    // If DB is not configured, continue without persistence
-    console.warn("Failed to persist new game:", e);
-  }
+// ── loadGame ─────────────────────────────────────────────────────────────────
 
-  return state;
+export async function loadGame(saveId: string): Promise<GameState | null> {
+  return loadSave(saveId);
 }
 
 // ── advanceTurn ───────────────────────────────────────────────────────────────
@@ -97,12 +95,12 @@ export interface AdvanceTurnResult {
 }
 
 export async function advanceTurn(
-  currentState: GameState,
+  saveId: string,
   actionId: string
 ): Promise<AdvanceTurnResult> {
-  const sessionId = await getSessionId();
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
 
-  // Create RNG from the game state's seed
   const rng = createRng(currentState.rng_seed);
 
   // Advance the season using the engine
@@ -265,11 +263,7 @@ export async function advanceTurn(
   }
 
   // Persist updated state
-  try {
-    await upsertSave(sessionId, result.state);
-  } catch (e) {
-    console.warn("Failed to persist game state:", e);
-  }
+  await upsertSave(saveId, result.state);
 
   return {
     state: result.state,
@@ -291,25 +285,18 @@ export interface EventChoiceResult {
 }
 
 export async function submitEventChoice(
-  currentState: GameState,
+  saveId: string,
   choiceId: string
 ): Promise<EventChoiceResult> {
-  const sessionId = await getSessionId();
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
 
-  // Use the engine's applyEventChoice to apply stat changes and clear event
   const newState = applyEventChoice(currentState, choiceId);
 
-  // Get the chosen option's narrative hint for narration
   const choice = currentState.current_event?.choices.find((c) => c.id === choiceId);
   const narration = choice?.narrative_hint || "事情就这样过去了。";
 
-  // Persist
-  try {
-    await upsertSave(sessionId, newState);
-  } catch (e) {
-    console.warn("Failed to persist game state:", e);
-  }
-
+  await upsertSave(saveId, newState);
   return { state: newState, narration };
 }
 
@@ -322,10 +309,11 @@ export interface EventFreeInputResult {
 }
 
 export async function submitEventFreeInput(
-  currentState: GameState,
+  saveId: string,
   freeText: string
 ): Promise<EventFreeInputResult> {
-  const sessionId = await getSessionId();
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
 
   if (!currentState.current_event) {
     return { state: currentState, narration: "没有待处理的事件。", success: false };
@@ -333,7 +321,6 @@ export async function submitEventFreeInput(
 
   const event = currentState.current_event;
 
-  // Call V2 to evaluate the player's creative solution
   const evalResult = await evaluateEventFreeInput({
     event_title: event.title,
     event_description: event.description,
@@ -349,14 +336,12 @@ export async function submitEventFreeInput(
       .map((n) => ({ name: n.name, role: n.role })),
   });
 
-  // Apply stat changes
   const newState = structuredClone(currentState) as GameState;
   newState.character.stats = applyStatChanges(
     newState.character.stats,
     evalResult.stat_changes
   );
 
-  // Handle NPC reaction if present
   if (evalResult.npc_reaction) {
     const npc = newState.npcs.find((n) => n.name === evalResult.npc_reaction!.npc_name);
     if (npc) {
@@ -368,15 +353,8 @@ export async function submitEventFreeInput(
     }
   }
 
-  // Clear event
   newState.current_event = null;
-
-  // Persist
-  try {
-    await upsertSave(sessionId, newState);
-  } catch (e) {
-    console.warn("Failed to persist game state:", e);
-  }
+  await upsertSave(saveId, newState);
 
   return {
     state: newState,
@@ -445,12 +423,15 @@ import { generateNarration } from "@/lib/ai/contracts/narrate";
 import type { E1ExamQuestion } from "@/lib/ai/schema";
 
 export async function getExamQuestion(
-  currentState: GameState,
+  saveId: string,
   examLevel: ExamLevel
 ): Promise<E1ExamQuestion> {
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
+
   const previousQuestions = currentState.character.exam_history
     .filter((e) => e.level === examLevel)
-    .map(() => ""); // simplified: don't track question text across sessions
+    .map(() => "");
 
   return generateExamQuestion({
     exam_level: examLevel,
@@ -482,14 +463,15 @@ export interface ExamResult {
 }
 
 export async function submitExamAnswer(
-  currentState: GameState,
+  saveId: string,
   examLevel: ExamLevel,
   question: E1ExamQuestion,
   choiceId: string | null,
   freeText: string | null,
   cheatSheetActive: boolean
 ): Promise<ExamResult> {
-  const sessionId = await getSessionId();
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
   const { character, world } = currentState;
   const erudition = character.stats.erudition;
 
@@ -636,12 +618,7 @@ export async function submitExamAnswer(
     tone: passed ? "triumphant" : "tragic",
   });
 
-  // Persist updated state
-  try {
-    await upsertSave(sessionId, newState);
-  } catch (e) {
-    console.warn("Failed to persist game state:", e);
-  }
+  await upsertSave(saveId, newState);
 
   return {
     passed,
@@ -671,14 +648,15 @@ export interface ToolResult {
 }
 
 export async function applyToolAction(
-  currentState: GameState,
+  saveId: string,
   toolId: string,
   context?: {
     examLevel?: ExamLevel;
     question?: E1ExamQuestion;
   }
 ): Promise<ToolResult> {
-  const sessionId = await getSessionId();
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
   const newState = structuredClone(currentState) as GameState;
   const rng = createRng(newState.rng_seed);
 
@@ -711,7 +689,7 @@ export async function applyToolAction(
           turns_remaining: 12,
         });
         newState.rng_seed = rng.nextInt(0, 2147483647);
-        try { await upsertSave(sessionId, newState); } catch (e) { console.warn("Failed to persist:", e); }
+        await upsertSave(saveId, newState);
         return {
           success: false,
           message: "东窗事发！夹带被搜出，考官震怒，逐出考场！",
@@ -722,7 +700,7 @@ export async function applyToolAction(
       }
 
       newState.rng_seed = rng.nextInt(0, 2147483647);
-      try { await upsertSave(sessionId, newState); } catch (e) { console.warn("Failed to persist:", e); }
+      await upsertSave(saveId, newState);
       return {
         success: true,
         message: "小抄藏好，心中稍安。学识加成翻倍。",
@@ -760,7 +738,7 @@ export async function applyToolAction(
       }
 
       newState.rng_seed = rng.nextInt(0, 2147483647);
-      try { await upsertSave(sessionId, newState); } catch (e) { console.warn("Failed to persist:", e); }
+      await upsertSave(saveId, newState);
       return {
         success: true,
         message: `消息灵通人士透露：选「${bestChoice.toUpperCase()}」最合圣意。`,
@@ -818,7 +796,7 @@ export async function applyToolAction(
       }
 
       newState.rng_seed = rng.nextInt(0, 2147483647);
-      try { await upsertSave(sessionId, newState); } catch (e) { console.warn("Failed to persist:", e); }
+      await upsertSave(saveId, newState);
       return {
         success: true,
         message: reEvalPassed
@@ -860,9 +838,11 @@ export interface GenerateHeirsResult {
 export type InheritanceTrigger = "drive_zero" | "max_age" | "victory";
 
 export async function generateHeirsAction(
-  currentState: GameState,
+  saveId: string,
   deathReason: InheritanceTrigger
 ): Promise<GenerateHeirsResult> {
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
   const { character, dynasty, world } = currentState;
 
   // Calculate legacy tokens
@@ -963,11 +943,12 @@ export interface ChooseHeirResult {
 }
 
 export async function chooseHeir(
-  currentState: GameState,
+  saveId: string,
   heirIndex: number,
   purchasedBlessingIds: string[]
 ): Promise<ChooseHeirResult> {
-  const sessionId = await getSessionId();
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
   const rng = createRng(currentState.rng_seed);
 
   // Use the engine's resolveInheritance which handles:
@@ -994,12 +975,7 @@ export async function chooseHeir(
   // Update RNG seed
   result.state.rng_seed = rng.nextInt(0, 2147483647);
 
-  // Persist
-  try {
-    await upsertSave(sessionId, result.state);
-  } catch (e) {
-    console.warn("Failed to persist game state:", e);
-  }
+  await upsertSave(saveId, result.state);
 
   return {
     state: result.state,
@@ -1077,13 +1053,14 @@ export interface PalaceExamResult {
 }
 
 export async function submitPalaceExam(
-  currentState: GameState,
+  saveId: string,
   question: E1ExamQuestion,
   choiceId: string | null,
   freeText: string | null,
   cheatSheetActive: boolean
 ): Promise<PalaceExamResult> {
-  const sessionId = await getSessionId();
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
   const { character, world, dynasty } = currentState;
   const erudition = character.stats.erudition;
 
@@ -1201,12 +1178,7 @@ export async function submitPalaceExam(
   // ── Step 6: Evaluate victory condition ──
   const victoryTier = evaluateVictory(newState);
 
-  // Persist
-  try {
-    await upsertSave(sessionId, newState);
-  } catch (e) {
-    console.warn("Failed to persist game state:", e);
-  }
+  await upsertSave(saveId, newState);
 
   return {
     playerScore,

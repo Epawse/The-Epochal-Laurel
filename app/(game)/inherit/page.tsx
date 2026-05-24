@@ -10,6 +10,7 @@ import type { LegacyTokens } from "@/lib/engine/inheritance";
 import { chooseHeir, type InheritanceTrigger } from "@/lib/actions/game";
 import { EraTransition } from "@/components/game/EraTransition";
 import { useSessionJSON } from "@/hooks/useSessionJSON";
+import { getSaveId } from "@/lib/client/saveId";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -129,8 +130,10 @@ export default function InheritPage() {
     if (selectedHeir === null || !data) return;
 
     startTransition(async () => {
+      const currentSaveId = getSaveId();
+      if (!currentSaveId) return;
       const result = await chooseHeir(
-        data.state,
+        currentSaveId,
         selectedHeir,
         Array.from(purchasedBlessings)
       );

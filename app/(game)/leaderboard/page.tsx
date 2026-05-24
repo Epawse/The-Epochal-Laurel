@@ -29,13 +29,9 @@ export default function LeaderboardPage() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [playerSessionId, setPlayerSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
-      // player_session_id is a raw UUID string (not JSON) — read directly.
-      const sid = sessionStorage.getItem("player_session_id");
-      if (sid) setPlayerSessionId(sid);
       try {
         setEntries(await getLeaderboard());
       } catch (e) {
@@ -181,12 +177,15 @@ export default function LeaderboardPage() {
             {/* Table rows */}
             {entries.map((entry, idx) => {
               const rank = idx + 1;
-              const isPlayer = entry.session_id === playerSessionId;
+              const isPlayer =
+                dynastySummary != null &&
+                entry.family_name === dynastySummary.familyName &&
+                entry.score === dynastySummary.score;
               const isTop3 = rank <= 3;
 
               return (
                 <div
-                  key={`${entry.session_id}-${idx}`}
+                  key={`${entry.family_name}-${idx}`}
                   className={`relative grid grid-cols-[60px_1fr_60px_100px_80px_80px] gap-2 px-4 py-3 border-b border-hairline-soft last:border-b-0 transition-colors ${
                     isPlayer
                       ? "bg-[rgba(196,57,44,0.06)]"

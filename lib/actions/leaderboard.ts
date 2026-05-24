@@ -1,8 +1,9 @@
 "use server";
 
-import { getSessionId } from "@/lib/db/client";
 import { topScores, recordVictory } from "@/lib/db/queries";
 import type { LeaderboardEntry } from "@/lib/db/queries";
+
+export type { LeaderboardEntry };
 
 /**
  * Fetch the top 12 leaderboard entries.
@@ -26,11 +27,8 @@ export async function recordScore(
   generations: number,
   score: number
 ): Promise<void> {
-  const sessionId = await getSessionId();
-
   try {
-    await recordVictory(sessionId, {
-      session_id: sessionId,
+    await recordVictory({
       family_name: familyName,
       tier,
       highest_title: highestTitle,
@@ -40,11 +38,4 @@ export async function recordScore(
   } catch (e) {
     console.warn("Failed to record score:", e);
   }
-}
-
-/**
- * Get the current player's session ID (for highlighting in leaderboard).
- */
-export async function getPlayerSessionId(): Promise<string> {
-  return getSessionId();
 }

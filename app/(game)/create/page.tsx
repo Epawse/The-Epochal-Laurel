@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { TopBar } from "@/components/game/TopBar";
 import { ORIGINS, type Origin, type OriginDef } from "@/lib/game/constants";
 import { newGame } from "@/lib/actions/game";
+import { setSaveId } from "@/lib/client/saveId";
 
 const originList = Object.values(ORIGINS);
 
@@ -103,8 +104,8 @@ export default function CreatePage() {
     if (!selectedOrigin || isPending) return;
 
     startTransition(async () => {
-      const state = await newGame(familyName || "张", selectedOrigin);
-      // Store in sessionStorage for the play page to pick up
+      const { id, state } = await newGame(familyName || "张", selectedOrigin);
+      setSaveId(id);
       sessionStorage.setItem("game_state", JSON.stringify(state));
       router.push("/play");
     });

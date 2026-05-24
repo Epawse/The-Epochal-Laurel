@@ -11,6 +11,7 @@ import type { ExamLevel } from "@/lib/game/constants";
 import type { E1ExamQuestion } from "@/lib/ai/schema";
 import type { ExamResult, ToolResult } from "@/lib/actions/game";
 import { useSessionJSON } from "@/hooks/useSessionJSON";
+import { getSaveId } from "@/lib/client/saveId";
 
 const EXAM_LEVEL_LABELS: Record<string, string> = {
   county: "童试",
@@ -23,6 +24,7 @@ export default function ExamPage() {
   const router = useRouter();
   const persisted = useSessionJSON<GameState>("game_state");
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [saveId] = useState<string | null>(() => getSaveId());
   const [examLevel, setExamLevel] = useState<ExamLevel>("county");
   const [synced, setSynced] = useState(false);
   const [question, setQuestion] = useState<E1ExamQuestion | null>(null);
@@ -65,7 +67,7 @@ export default function ExamPage() {
   useEffect(() => {
     if (!gameState || question !== null) return;
     let cancelled = false;
-    getExamQuestion(gameState, examLevel).then((q) => {
+    getExamQuestion(saveId!, examLevel).then((q) => {
       if (!cancelled) {
         setQuestion(q);
         setIsLoading(false);
@@ -74,7 +76,7 @@ export default function ExamPage() {
     return () => {
       cancelled = true;
     };
-  }, [gameState, examLevel, question]);
+  }, [gameState, examLevel, question, saveId]);
 
   function handleSubmit() {
     if (!gameState || !question) return;
@@ -82,22 +84,19 @@ export default function ExamPage() {
 
     startSubmit(async () => {
       if (examLevel === "palace") {
-        // Palace exam: call submitPalaceExam and navigate to /palace
         const palaceResult = await submitPalaceExam(
-          gameState,
+          saveId!,
           question,
           freeText.trim() ? null : selectedChoice,
           freeText.trim() || null,
           cheatSheetActive
         );
-        // Store palace result for the palace ranking page
         sessionStorage.setItem("palace_result", JSON.stringify(palaceResult));
         sessionStorage.setItem("game_state", JSON.stringify(palaceResult.state));
         router.push("/palace");
       } else {
-        // Regular exam: show ResultOverlay
         const result = await submitExamAnswer(
-          gameState,
+          saveId!,
           examLevel,
           question,
           freeText.trim() ? null : selectedChoice,
@@ -106,7 +105,6 @@ export default function ExamPage() {
         );
         setExamResult(result);
         setGameState(result.state);
-        // Persist updated state
         sessionStorage.setItem("game_state", JSON.stringify(result.state));
       }
     });
@@ -120,7 +118,7 @@ export default function ExamPage() {
   async function handleUseTool(toolId: string) {
     if (!gameState || !question) return;
 
-    const result: ToolResult = await applyToolAction(gameState, toolId, {
+    const result: ToolResult = await applyToolAction(saveId!, toolId, {
       examLevel,
       question,
     });

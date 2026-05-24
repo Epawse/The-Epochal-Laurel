@@ -12,9 +12,10 @@ import { SchemeExposureOverlay } from "@/components/game/SchemeExposureOverlay";
 import { ACTIONS, highestTitleOf } from "@/lib/game/constants";
 import type { GameState, StatChanges } from "@/lib/game/schema";
 import { advanceTurn, submitEventChoice, submitEventFreeInput, generateHeirsAction } from "@/lib/actions/game";
-import { recordScore, getPlayerSessionId } from "@/lib/actions/leaderboard";
+import { recordScore } from "@/lib/actions/leaderboard";
 import { calculateScore } from "@/lib/game/scoring";
 import { useSessionJSON } from "@/hooks/useSessionJSON";
+import { getSaveId } from "@/lib/client/saveId";
 
 const ACTION_ICONS: Record<string, string> = {
   study: "/assets/action-study.png",
@@ -65,6 +66,7 @@ export default function PlayPage() {
   const router = useRouter();
   const persisted = useSessionJSON<GameState>("game_state");
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [saveId] = useState<string | null>(() => getSaveId());
   const [synced, setSynced] = useState(false);
   const [deltas, setDeltas] = useState<Partial<StatChanges>>({});
   const [narration, setNarration] = useState(
@@ -73,13 +75,11 @@ export default function PlayPage() {
   const [isPending, startTransition] = useTransition();
   const [schemeExposed, setSchemeExposed] = useState(false);
 
-  // Hydrate local state once from the persisted save (render-time sync, not an effect).
   if (!synced && persisted !== null) {
     setSynced(true);
     setGameState(persisted);
   }
 
-  // Persist game state to sessionStorage on change.
   useEffect(() => {
     if (gameState) {
       sessionStorage.setItem("game_state", JSON.stringify(gameState));
@@ -112,10 +112,10 @@ export default function PlayPage() {
   const hasEvent = gameState.current_event !== null;
 
   function handleAction(actionId: string) {
-    if (!gameState || isPending) return;
+    if (!gameState || !saveId || isPending) return;
 
     startTransition(async () => {
-      const result = await advanceTurn(gameState, actionId);
+      const result = await advanceTurn(saveId, actionId);
       setGameState(result.state);
       setDeltas(result.statChanges);
 
@@ -139,7 +139,7 @@ export default function PlayPage() {
       if (result.characterDied && result.deathReason) {
         // Brief delay to show the death narration before transitioning
         setTimeout(async () => {
-          const heirsResult = await generateHeirsAction(result.state, result.deathReason!);
+          const heirsResult = await generateHeirsAction(saveId, result.deathReason!);
 
           if (heirsResult.gameOver) {
             // Family line dies out — game over (F tier)
@@ -150,10 +150,6 @@ export default function PlayPage() {
 
             // Record to leaderboard
             await recordScore(dyn.family_name, tier, highTitle, dyn.total_generations, score);
-
-            // Get session ID for player highlighting
-            const sid = await getPlayerSessionId();
-            sessionStorage.setItem("player_session_id", sid);
 
             // Set dynasty summary for leaderboard display
             sessionStorage.setItem("dynasty_summary", JSON.stringify({
@@ -190,7 +186,7 @@ export default function PlayPage() {
     if (!gameState || isPending) return;
 
     startTransition(async () => {
-      const result = await submitEventChoice(gameState, choiceId);
+      const result = await submitEventChoice(saveId!, choiceId);
       setGameState(result.state);
       setNarration(result.narration);
     });
@@ -200,7 +196,7 @@ export default function PlayPage() {
     if (!gameState || isPending) return;
 
     startTransition(async () => {
-      const result = await submitEventFreeInput(gameState, text);
+      const result = await submitEventFreeInput(saveId!, text);
       setGameState(result.state);
       setNarration(result.narration);
     });

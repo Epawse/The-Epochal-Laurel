@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { SceneBackground } from "@/components/ui/SceneBackground";
 import { SealStamp } from "@/components/ui/SealStamp";
-import { recordScore, getPlayerSessionId } from "@/lib/actions/leaderboard";
+import { recordScore } from "@/lib/actions/leaderboard";
 import { calculateScore } from "@/lib/game/scoring";
 import { generateHeirsAction, type PalaceExamResult } from "@/lib/actions/game";
 import type { RankingEntry } from "@/lib/engine/exam";
 import { highestTitleOf } from "@/lib/game/constants";
 import { useSessionJSON } from "@/hooks/useSessionJSON";
+import { getSaveId } from "@/lib/client/saveId";
 
 const TITLE_COLORS: Record<string, string> = {
   "状元": "text-gold-glow",
@@ -231,9 +232,6 @@ export default function PalacePage() {
 
                 await recordScore(dynasty.family_name, result.victoryTier, highTitle, dynasty.total_generations, score);
 
-                const sid = await getPlayerSessionId();
-                sessionStorage.setItem("player_session_id", sid);
-
                 sessionStorage.setItem("dynasty_summary", JSON.stringify({
                   familyName: dynasty.family_name,
                   tier: result.victoryTier,
@@ -257,7 +255,9 @@ export default function PalacePage() {
             type="button"
             disabled={isNavigating}
             onClick={() => startNavigation(async () => {
-              const heirsResult = await generateHeirsAction(result.state, "victory");
+              const currentSaveId = getSaveId();
+              if (!currentSaveId) return;
+              const heirsResult = await generateHeirsAction(currentSaveId, "victory");
 
               if (heirsResult.gameOver) {
                 const { dynasty, character } = result.state;
@@ -267,8 +267,6 @@ export default function PalacePage() {
 
                 await recordScore(dynasty.family_name, tier, highTitle, dynasty.total_generations, score);
 
-                const sid = await getPlayerSessionId();
-                sessionStorage.setItem("player_session_id", sid);
                 sessionStorage.setItem("dynasty_summary", JSON.stringify({
                   familyName: dynasty.family_name,
                   tier,

@@ -2,7 +2,6 @@ import { createClient } from "./client";
 import { GameStateSchema, type GameState } from "@/lib/game/schema";
 
 export interface LeaderboardEntry {
-  session_id: string;
   family_name: string;
   tier: string;
   highest_title: string;
@@ -11,23 +10,21 @@ export interface LeaderboardEntry {
 }
 
 /**
- * Load a saved game state by session ID.
- * Returns null if no save exists.
+ * Load a saved game state by save ID (primary key).
  */
-export async function loadSave(sessionId: string): Promise<GameState | null> {
+export async function loadSave(id: string): Promise<GameState | null> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("saves")
     .select("state")
-    .eq("session_id", sessionId)
+    .eq("id", id)
     .single();
 
   if (error || !data) {
     return null;
   }
 
-  // Validate the stored state against schema
   const parsed = GameStateSchema.safeParse(data.state);
   if (!parsed.success) {
     console.error("Invalid saved state:", parsed.error.issues);
@@ -38,25 +35,47 @@ export async function loadSave(sessionId: string): Promise<GameState | null> {
 }
 
 /**
- * Upsert (insert or update) a game save.
+ * Create a new save row and return its UUID.
  */
-export async function upsertSave(
-  sessionId: string,
-  state: GameState
-): Promise<void> {
+export async function createSave(state: GameState): Promise<string> {
+  const validated = GameStateSchema.parse(state);
   const supabase = await createClient();
 
-  const { error } = await supabase.from("saves").upsert(
-    {
-      session_id: sessionId,
-      state: state as unknown as Record<string, unknown>,
+  const { data, error } = await supabase
+    .from("saves")
+    .insert({
+      slot: "default",
+      state: validated as unknown as Record<string, unknown>,
+      turn_number: validated.turn_number,
       updated_at: new Date().toISOString(),
-    },
-    { onConflict: "session_id" }
-  );
+    })
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    throw new Error("Failed to create save");
+  }
+
+  return data.id;
+}
+
+/**
+ * Update an existing save by ID.
+ */
+export async function upsertSave(id: string, state: GameState): Promise<void> {
+  const validated = GameStateSchema.parse(state);
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("saves")
+    .update({
+      state: validated as unknown as Record<string, unknown>,
+      turn_number: validated.turn_number,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
 
   if (error) {
-    console.error("Failed to save game state:", error);
     throw new Error("Failed to save game state");
   }
 }
@@ -69,7 +88,7 @@ export async function topScores(limit: number = 12): Promise<LeaderboardEntry[]>
 
   const { data, error } = await supabase
     .from("leaderboard")
-    .select("session_id, family_name, tier, highest_title, generations, score")
+    .select("family_name, tier, highest_title, generations, score")
     .order("score", { ascending: false })
     .limit(limit);
 
@@ -83,14 +102,10 @@ export async function topScores(limit: number = 12): Promise<LeaderboardEntry[]>
 /**
  * Record a victory on the leaderboard.
  */
-export async function recordVictory(
-  sessionId: string,
-  entry: LeaderboardEntry
-): Promise<void> {
+export async function recordVictory(entry: LeaderboardEntry): Promise<void> {
   const supabase = await createClient();
 
   const { error } = await supabase.from("leaderboard").insert({
-    session_id: sessionId,
     family_name: entry.family_name,
     tier: entry.tier,
     highest_title: entry.highest_title,
@@ -99,7 +114,6 @@ export async function recordVictory(
   });
 
   if (error) {
-    console.error("Failed to record victory:", error);
     throw new Error("Failed to record victory");
   }
 }

@@ -4,7 +4,16 @@
  * Pure functions, no IO, no side effects.
  */
 
-import type { GameState, Character, Stats, StatChanges } from "@/lib/game/schema";
+import type {
+  GameState,
+  Character,
+  CurrentEvent,
+  EventReward,
+  Modifier,
+  Stats,
+  StatChanges,
+  RelicDraft,
+} from "@/lib/game/schema";
 import type { Origin, ExamLevel, Season, Era } from "@/lib/game/constants";
 import {
   ORIGINS,
@@ -25,7 +34,24 @@ import {
   applyStatChanges,
   clampStats,
 } from "./balance";
+import {
+  collectModifiers,
+  hasMetaModifier,
+  isActionBlocked,
+  metaModifierValue,
+  modifiersForBlessingIds,
+  tickModifiers,
+} from "./effects";
+import { rollCheck, type RollCheckResult } from "./dice";
 import { palaceRanking } from "./exam";
+import {
+  chooseHeirloomRelic,
+  createRelicDraftFromIds,
+  maybeCreateActionRelicDraft,
+  queueRelicDraft,
+} from "./relics";
+import { findSkillById, originSkillKit } from "./skills";
+import { maybeCreateWorldModifiers } from "./worldModifiers";
 import { rollMaxAge, canMarry, rollFertileUntil, rollSonBirth, rollChildSurvival } from "./lineage";
 import {
   calculateLegacyTokens,
@@ -66,6 +92,8 @@ export interface AdvanceSeasonResult {
   characterDied: boolean;
   /** Death reason if applicable */
   deathReason: "drive_zero" | "max_age" | null;
+  /** If a relic draft was created, this contains the draft options */
+  relicDraft: RelicDraft | null;
 }
 
 /**
@@ -85,14 +113,27 @@ export function advanceSeason(
   const newState = structuredClone(state) as GameState;
   let schemeExposed = false;
   let eventTrigger: string | null = null;
+  let relicDraft: RelicDraft | null = null;
+  const modifiers = collectModifiers(newState.character, newState.world);
+
+  if (isActionBlocked(actionId, modifiers)) {
+    throw new Error(`Action blocked by active modifier: ${actionId}`);
+  }
 
   // 1. Apply action effects (with diminishing returns)
-  const actionChanges = applyActionEffects(action, newState.character.stats, rng);
+  const actionChanges = applyActionEffects(action, newState.character.stats, rng, modifiers);
   let totalChanges: StatChanges = { ...actionChanges };
 
   // 2. Check scheme exposure
   if (actionId === "scheme") {
-    const exposureChance = schemeExposureChance(newState.character.stats.fortune);
+    const exposureChance = Math.min(
+      1,
+      Math.max(
+        0,
+        schemeExposureChance(newState.character.stats.fortune) +
+          metaModifierValue("scheme_exposure", modifiers)
+      )
+    );
     if (rng.next() < exposureChance) {
       schemeExposed = true;
       const penalty = schemeExposurePenalty();
@@ -108,6 +149,13 @@ export function advanceSeason(
         newState.character.status_effects.push({
           type: "exam_ban",
           turns_remaining: 12, // ~3 years in seasons
+        });
+        newState.character.modifiers.push({
+          id: `tool_exam_ban_${newState.turn_number}`,
+          source: { type: "tool", id: "scheme_exposure" },
+          label: "科考禁令",
+          effect: { kind: "meta", key: "exam_ban", value: 1 },
+          turns_remaining: 12,
         });
       }
     }
@@ -130,11 +178,35 @@ export function advanceSeason(
       turns_remaining: effect.turns_remaining - 1,
     }))
     .filter((effect) => effect.turns_remaining > 0);
+  newState.character.modifiers = tickModifiers(newState.character.modifiers);
+  newState.world.world_modifiers = tickModifiers(newState.world.world_modifiers);
+
+  // Rest can produce a short-lived inspiration buff, giving recovery an
+  // exam-relevant upside beyond refilling drive.
+  if (actionId === "rest" && rng.next() < 0.15) {
+    newState.character.modifiers.push({
+      id: `event_inspiration_${newState.turn_number}`,
+      source: { type: "event", id: "rest_inspiration" },
+      label: "灵感乍现",
+      effect: { kind: "exam_score", value: 5 },
+      turns_remaining: 4,
+    });
+  }
 
   // 6. Roll for random event
   const eventChance = eventChancePerSeason(newState.character.stats.fortune);
   if (rng.next() < eventChance) {
-    eventTrigger = rollEventType(newState.character.stats.fortune, rng);
+    eventTrigger = rollEventType(newState.character.stats.fortune, rng, modifiers);
+  }
+
+  // 6b. Roll action-specific relic draft if no event is taking over the turn.
+  if (!eventTrigger) {
+    relicDraft = maybeCreateActionRelicDraft(newState, action.id, rng);
+    if (relicDraft) {
+      const withDraft = queueRelicDraft(newState, relicDraft);
+      newState.pending_relic_draft = withDraft.pending_relic_draft;
+      newState.character.seen_relic_ids = withDraft.character.seen_relic_ids;
+    }
   }
 
   // 7. Advance season/year
@@ -203,10 +275,18 @@ export function advanceSeason(
     schemeExposed,
     characterDied,
     deathReason,
+    relicDraft,
   };
 }
 
 // ── applyEventChoice ───────────────────────────────────────────────────────
+
+export interface EventChoiceResolution {
+  state: GameState;
+  statChanges: StatChanges;
+  roll: RollCheckResult | null;
+  relicDraft: RelicDraft | null;
+}
 
 /**
  * Apply a chosen event option's stat_changes to the game state.
@@ -225,13 +305,174 @@ export function applyEventChoice(
   }
 
   const newState = structuredClone(state) as GameState;
-  newState.character.stats = applyStatChanges(
-    newState.character.stats,
-    choice.stat_changes
-  );
+  newState.character.stats = applyStatChanges(newState.character.stats, choice.stat_changes);
   newState.current_event = null;
 
   return newState;
+}
+
+/**
+ * Resolve an event choice with the new dice/reward hooks. Legacy callers can
+ * keep using applyEventChoice(); server actions should use this richer variant.
+ */
+export function applyEventChoiceWithResult(
+  state: GameState,
+  choiceId: string,
+  rng: Rng
+): EventChoiceResolution {
+  if (!state.current_event) {
+    throw new Error("No current event to resolve");
+  }
+
+  const event = state.current_event;
+  const choice = event.choices.find((candidate) => candidate.id === choiceId);
+  if (!choice) {
+    throw new Error(`Unknown choice: ${choiceId}`);
+  }
+
+  let newState = structuredClone(state) as GameState;
+  const modifiers = collectModifiers(newState.character, newState.world);
+  let roll: RollCheckResult | null = null;
+  let statChanges = choice.stat_changes;
+
+  if (choice.check) {
+    const statModifier = Math.round(newState.character.stats[choice.check.stat] / 10);
+    roll = rollCheck({
+      rng,
+      dc: choice.check.dc,
+      modifier: statModifier,
+      category: "event",
+      modifiers,
+    });
+    statChanges = choice.check.outcomes[roll.tier];
+  }
+
+  newState.character.stats = applyStatChanges(newState.character.stats, statChanges);
+  const rewardDraft = applyEventReward(newState, event.reward ?? null, rng);
+  newState.current_event = null;
+
+  const hookResult = applyEventSystemHooks(newState, event, rng);
+  newState = hookResult.state;
+
+  return {
+    state: newState,
+    statChanges,
+    roll,
+    relicDraft: rewardDraft ?? hookResult.relicDraft,
+  };
+}
+
+function applyEventReward(
+  state: GameState,
+  reward: EventReward | null,
+  rng: Rng
+): RelicDraft | null {
+  if (!reward) return null;
+
+  if (reward.type === "buff" && reward.buff) {
+    state.character.modifiers.push(reward.buff);
+    return null;
+  }
+
+  if (reward.type === "skill_grant" && reward.skill_id) {
+    const skill = findSkillById(reward.skill_id);
+    if (skill && !state.character.skills.some((existing) => existing.id === skill.id)) {
+      state.character.skills.push(skill);
+    }
+    return null;
+  }
+
+  if (reward.type === "relic_draft" && !state.pending_relic_draft) {
+    const draft = createRelicDraftFromIds(state, rng, "event", reward.relic_ids);
+    const queued = queueRelicDraft(state, draft);
+    state.pending_relic_draft = queued.pending_relic_draft;
+    state.character.seen_relic_ids = queued.character.seen_relic_ids;
+    return draft;
+  }
+
+  return null;
+}
+
+function applyEventSystemHooks(
+  state: GameState,
+  event: CurrentEvent,
+  rng: Rng
+): { state: GameState; relicDraft: RelicDraft | null } {
+  if (isMourningEvent(event)) {
+    return { state: applyMourning(state), relicDraft: null };
+  }
+
+  if (isCatastropheEvent(event)) {
+    return applyCatastrophe(state, rng);
+  }
+
+  return { state, relicDraft: null };
+}
+
+function isMourningEvent(event: CurrentEvent): boolean {
+  const text = `${event.id} ${event.title}`;
+  return /parent_death|mourning|丁忧|守孝|父丧|母丧|讣音|病逝/.test(text);
+}
+
+function isCatastropheEvent(event: CurrentEvent): boolean {
+  const text = `${event.id} ${event.title}`;
+  return /catastrophe|flood|plague|war|灾|洪水|瘟|兵燹|战乱|旱/.test(text);
+}
+
+export function applyMourning(state: GameState): GameState {
+  const newState = structuredClone(state) as GameState;
+  const modifiers = collectModifiers(newState.character, newState.world);
+
+  if (hasMetaModifier("skip_mourning", modifiers)) {
+    newState.character.stats = applyStatChanges(newState.character.stats, {
+      erudition: 0,
+      fortune: 10,
+      drive: 0,
+      wealth: 0,
+    });
+    return newState;
+  }
+
+  newState.character.modifiers.push({
+    id: `event_mourning_${newState.turn_number}`,
+    source: { type: "event", id: "parent_death" },
+    label: "丁忧守孝",
+    effect: { kind: "action_block", actions: ["socialize", "scheme"] },
+    turns_remaining: 12,
+  });
+  return newState;
+}
+
+export function applyCatastrophe(
+  state: GameState,
+  rng: Rng,
+  statPenalty: StatChanges = { erudition: -5, fortune: -12, drive: -10, wealth: -10 }
+): { state: GameState; statChanges: StatChanges; relicDraft: RelicDraft | null } {
+  let newState = structuredClone(state) as GameState;
+  newState.character.stats = applyStatChanges(newState.character.stats, statPenalty);
+  newState.character.modifiers.push(catastropheSurvivorModifier(newState.turn_number));
+
+  let relicDraft: RelicDraft | null = null;
+  if (!newState.pending_relic_draft) {
+    relicDraft = createRelicDraftFromIds(newState, rng, "catastrophe", [
+      "survivors_tablet",
+      "traveling_medicine",
+      "lucky_coin",
+    ]);
+    newState = queueRelicDraft(newState, relicDraft);
+  }
+
+  return { state: newState, statChanges: statPenalty, relicDraft };
+}
+
+function catastropheSurvivorModifier(turnNumber: number): Modifier {
+  return {
+    id: `event_catastrophe_survivor_${turnNumber}`,
+    source: { type: "event", id: "catastrophe" },
+    label: "劫后余生",
+    effect: { kind: "meta", key: "catastrophe_survivor", value: 1 },
+    turns_remaining: null,
+  };
 }
 
 // ── resolveExam ────────────────────────────────────────────────────────────
@@ -371,10 +612,17 @@ export function resolveInheritance(
   heirIndex: number,
   purchasedBlessings: string[],
   rng: Rng,
-  heirData?: HeirData
+  heirData?: HeirData,
+  heirloomRelicId: string | null = null
 ): InheritanceResolution {
   const newState = structuredClone(state) as GameState;
   const oldCharacter = newState.character;
+  const heirloomRelic = chooseHeirloomRelic(newState, heirloomRelicId);
+  newState.dynasty.pending_heirloom = heirloomRelic;
+  const activeBlessingIds = new Set([
+    ...newState.dynasty.legacy.ancestral_blessings.map((blessing) => blessing.id),
+    ...purchasedBlessings,
+  ]);
 
   // 1. Calculate legacy tokens
   const legacyTokens = calculateLegacyTokens(oldCharacter);
@@ -384,7 +632,7 @@ export function resolveInheritance(
 
   // 3. Calculate blessing bonuses from purchased blessings
   const blessingBonuses: BlessingBonuses = { erudition: 0, fortune: 0, drive: 0, wealth: 0 };
-  for (const blessingId of purchasedBlessings) {
+  for (const blessingId of activeBlessingIds) {
     const blessing = BLESSINGS.find((b) => b.id === blessingId);
     if (blessing) {
       // Parse blessing effects
@@ -419,7 +667,7 @@ export function resolveInheritance(
 
   // 7. Calculate max_age for new character
   const originAgeModifier = heirOrigin === "official_decline" ? -2 : 0;
-  const blessingAgeModifier = purchasedBlessings.includes("iron_constitution") ? 10 : 0;
+  const blessingAgeModifier = activeBlessingIds.has("iron_constitution") ? 10 : 0;
   const newMaxAge = rollMaxAge(rng, 0, originAgeModifier, blessingAgeModifier);
 
   // 8. Archive old character as ancestor
@@ -456,13 +704,40 @@ export function resolveInheritance(
     exam_history: [],
     relationships: [],
     inventory: [],
+    relics: heirloomRelic ? [heirloomRelic] : [],
+    heirloom_relic_id: null,
+    seen_relic_ids: heirloomRelic ? [heirloomRelic.id] : [],
     traits: heirData?.traits ?? [originDef.trait],
+    skills: originSkillKit(heirOrigin),
     status_effects: [],
+    modifiers: modifiersForBlessingIds(activeBlessingIds),
     family: { spouse: null, children: [] },
   };
 
   // 10. Update dynasty
   newState.dynasty.total_generations = newGeneration;
+  newState.dynasty.pending_heirloom = null;
+  for (const blessingId of purchasedBlessings) {
+    const blessing = BLESSINGS.find((b) => b.id === blessingId);
+    if (!blessing) continue;
+
+    const existing = newState.dynasty.legacy.ancestral_blessings.some(
+      (ancestral) => ancestral.id === blessingId
+    );
+    if (!existing) {
+      newState.dynasty.legacy.ancestral_blessings.push({
+        id: blessing.id,
+        name: blessing.name,
+        effect: blessing.effect,
+        unlocked_gen: newGeneration,
+      });
+    }
+
+    const available = newState.dynasty.available_blessings.find((candidate) => candidate.id === blessingId);
+    if (available) {
+      available.unlocked = true;
+    }
+  }
   newState.dynasty.legacy = {
     ...newState.dynasty.legacy,
     books: decayedTokens.books,
@@ -474,7 +749,10 @@ export function resolveInheritance(
   const achievements: AchievementFlags = {
     firstExamPass: oldCharacter.exam_history.some((e) => e.result === "pass") &&
       newState.dynasty.ancestors.every((a) => a.highest_title === "白身" || a.generation === oldCharacter.generation),
-    survivedCatastrophe: oldCharacter.status_effects.some((e) => e.type === "catastrophe_survivor"),
+    survivedCatastrophe: hasMetaModifier(
+      "catastrophe_survivor",
+      collectModifiers(oldCharacter, newState.world)
+    ),
     reachedAge70: oldCharacter.age >= 70,
     raised3Sons: oldCharacter.family.children.filter((c) => c.is_son && c.alive).length >= 3,
   };
@@ -515,6 +793,7 @@ export function resolveInheritance(
       temperament_known: "hidden",
       temperament_eliminated: [],
     };
+    newState.world.world_modifiers = maybeCreateWorldModifiers(nextEra, rng);
   }
 
   // 13. Reset auxiliary tools
@@ -569,15 +848,21 @@ export function createCharacter(
     exam_history: [],
     relationships: [],
     inventory: [],
+    relics: [],
+    heirloom_relic_id: null,
+    seen_relic_ids: [],
     traits: [originDef.trait],
+    skills: originSkillKit(origin),
     status_effects: [],
+    modifiers: [],
     family: { spouse: null, children: [] },
   };
 
   const examSchedule = initExamSchedule(rng);
+  const worldModifiers = maybeCreateWorldModifiers("prosperity", rng);
 
   const gameState: GameState = {
-    version: "0.1.0",
+    version: "0.2.0",
     character,
     world: {
       era: "prosperity",
@@ -596,6 +881,7 @@ export function createCharacter(
         temperament_eliminated: [],
       },
       events_this_era: [],
+      world_modifiers: worldModifiers,
       exam_schedule: examSchedule,
       auxiliary_tools: resetAuxiliaryTools(1),
     },
@@ -619,9 +905,11 @@ export function createCharacter(
         effect: b.effect,
         unlocked: false,
       })),
+      pending_heirloom: null,
     },
     npcs: [],
     current_event: null,
+    pending_relic_draft: null,
     turn_number: 0,
     rng_seed: rng.nextInt(0, 2147483647),
   };

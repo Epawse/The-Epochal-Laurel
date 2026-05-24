@@ -8,12 +8,20 @@ import { ActionCard } from "@/components/game/ActionCard";
 import { NarrativeStrip } from "@/components/game/NarrativeStrip";
 import { CourtHint } from "@/components/game/CourtHint";
 import { EventModal } from "@/components/game/EventModal";
+import { RelicDraftModal } from "@/components/game/RelicDraftModal";
 import { SchemeExposureOverlay } from "@/components/game/SchemeExposureOverlay";
 import { ErrorToast } from "@/components/ui/ErrorToast";
 import { ACTIONS, highestTitleOf, EXAM_REQUIREMENTS, type ExamLevel } from "@/lib/game/constants";
 import { ERA_LABELS } from "@/lib/game/display";
 import type { GameState, StatChanges } from "@/lib/game/schema";
-import { advanceTurn, submitEventChoice, submitEventFreeInput, generateHeirsAction } from "@/lib/actions/game";
+import {
+  advanceTurn,
+  chooseRelicDraft as chooseRelicDraftAction,
+  openMerchantShop,
+  submitEventChoice,
+  submitEventFreeInput,
+  generateHeirsAction,
+} from "@/lib/actions/game";
 import { recordScore } from "@/lib/actions/leaderboard";
 import { calculateScore } from "@/lib/game/scoring";
 import { removeSessionJSON, setSessionJSON, useSessionJSON } from "@/hooks/useSessionJSON";
@@ -32,6 +40,13 @@ const SEASON_LABELS: Record<string, string> = {
   summer: "夏",
   autumn: "秋",
   winter: "冬",
+};
+
+const DICE_TIER_LABELS: Record<string, string> = {
+  crit_success: "大吉",
+  success: "得手",
+  fail: "失手",
+  crit_fail: "大凶",
 };
 
 function getPortraitSrc(age: number): string {
@@ -125,6 +140,7 @@ export default function PlayPage() {
   const nextExam = getExamStatus(world.exam_schedule, character.titles, character.stats.erudition, character.status_effects);
   const isInvasion = world.era === "invasion";
   const hasEvent = currentGameState.current_event !== null;
+  const hasRelicDraft = currentGameState.pending_relic_draft !== null;
 
   function handleAction(actionId: string) {
     if (!currentGameState || !saveId || isPending) return;
@@ -211,7 +227,16 @@ export default function PlayPage() {
       try {
         const result = await submitEventChoice(saveId, choiceId);
         setGameState(result.state);
-        setNarration(result.narration);
+        setDeltas(result.statChanges);
+        const rollModifier = result.roll && result.roll.modifier >= 0
+          ? `+${result.roll.modifier}`
+          : `${result.roll?.modifier ?? ""}`;
+        const rollText = result.roll
+          ? ` 掷骰 ${result.roll.natural}${rollModifier}=${result.roll.total}，${DICE_TIER_LABELS[result.roll.tier] ?? result.roll.tier}。`
+          : "";
+        const draftText = result.relicDraft ? " 眼前又现三件奇物。" : "";
+        setNarration(`${result.narration}${rollText}${draftText}`);
+        setTimeout(() => setDeltas({}), 1500);
       } catch (e) {
         console.warn("Failed to submit event choice:", e);
         setError("暂时无法处理事件选择，请稍后重试。");
@@ -237,6 +262,38 @@ export default function PlayPage() {
 
   function handleEventClose() {
     // Events cannot be dismissed without making a choice — no-op
+  }
+
+  function handleOpenMerchantShop() {
+    if (!currentGameState || !saveId || isPending || hasEvent || hasRelicDraft) return;
+
+    startTransition(async () => {
+      setError(null);
+      try {
+        const result = await openMerchantShop(saveId);
+        setGameState(result.state);
+        setNarration(result.message);
+      } catch (e) {
+        console.warn("Failed to open merchant shop:", e);
+        setError("暂时无法打开钱庄，请稍后重试。");
+      }
+    });
+  }
+
+  function handleRelicChoice(relicId: string) {
+    if (!currentGameState || !saveId || isPending || !hasRelicDraft) return;
+
+    startTransition(async () => {
+      setError(null);
+      try {
+        const result = await chooseRelicDraftAction(saveId, relicId);
+        setGameState(result.state);
+        setNarration(result.message);
+      } catch (e) {
+        console.warn("Failed to choose relic:", e);
+        setError("暂时无法选择奇物，请稍后重试。");
+      }
+    });
   }
 
   return (
@@ -290,15 +347,28 @@ export default function PlayPage() {
             </div>
           )}
 
-          {/* Counter-Fate Tools (display only) */}
-          <div className="border border-dashed border-hairline p-3 opacity-50 hidden md:block">
+          {/* Counter-Fate Tools */}
+          <div className="border border-dashed border-hairline p-3 hidden md:block">
             <span className="font-mono text-[9px] tracking-[0.18em] text-bone-mute uppercase block mb-2">
               辅助
             </span>
-            <div className="flex flex-col gap-1.5 font-serif text-xs text-bone-mute tracking-[0.04em]">
-              <span>小抄/夹带</span>
-              <span>榜眼引路</span>
-              <span>恩师引荐</span>
+            <div className="flex flex-col gap-2 font-serif text-xs tracking-[0.04em]">
+              <button
+                type="button"
+                disabled={
+                  isPending ||
+                  hasEvent ||
+                  hasRelicDraft ||
+                  character.stats.wealth < 15
+                }
+                onClick={handleOpenMerchantShop}
+                className="text-left border border-hairline px-2.5 py-2 text-bone hover:border-gold-dim hover:text-gold disabled:text-bone-mute disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                钱庄暗柜
+              </button>
+              <span className="text-bone-mute">小抄/夹带</span>
+              <span className="text-bone-mute">榜眼引路</span>
+              <span className="text-bone-mute">恩师引荐</span>
             </div>
           </div>
         </aside>
@@ -312,7 +382,7 @@ export default function PlayPage() {
                 key={action.id}
                 action={action}
                 iconSrc={ACTION_ICONS[action.id] ?? "/assets/action-study.png"}
-                disabled={isPending || hasEvent}
+                disabled={isPending || hasEvent || hasRelicDraft}
                 onClick={() => handleAction(action.id)}
               />
             ))}
@@ -355,7 +425,7 @@ export default function PlayPage() {
             </div>
             <button
               type="button"
-              disabled={nextExam.seasons > 0 || nextExam.locked || hasEvent}
+              disabled={nextExam.seasons > 0 || nextExam.locked || hasEvent || hasRelicDraft}
               onClick={() => router.push("/play/exam")}
               className="mt-3 w-full px-4 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.22em] transition-all duration-200 disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:cursor-not-allowed disabled:bg-none"
               aria-label="参加考试"
@@ -407,6 +477,14 @@ export default function PlayPage() {
           onChoice={handleEventChoice}
           onFreeInput={handleEventFreeInput}
           onClose={handleEventClose}
+          disabled={isPending}
+        />
+      )}
+
+      {hasRelicDraft && currentGameState.pending_relic_draft && (
+        <RelicDraftModal
+          draft={currentGameState.pending_relic_draft}
+          onChoose={handleRelicChoice}
           disabled={isPending}
         />
       )}

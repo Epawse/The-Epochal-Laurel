@@ -103,6 +103,20 @@ describe("balance", () => {
       const dist = eventTypeDistribution(80);
       expect(dist).toEqual({ opportunity: 35, misfortune: 10, social: 35, political: 20 });
     });
+
+    it("applies typed world event_bias modifiers to event weights", () => {
+      const dist = eventTypeDistribution(15, [
+        {
+          id: "hard_times",
+          source: { type: "world", id: "hard_times" },
+          label: "世道艰难",
+          effect: { kind: "event_bias", event_type: "misfortune", weight_mult: 1.5 },
+          turns_remaining: null,
+        },
+      ]);
+
+      expect(dist).toEqual({ opportunity: 15, misfortune: 37.5, social: 45, political: 15 });
+    });
   });
 
   describe("schemeExposureChance", () => {
@@ -181,7 +195,7 @@ describe("balance", () => {
     it("normalizes reversed ranges defensively", () => {
       const rng = createRng(42);
       const reversedAction = {
-        id: "test",
+        id: "scheme" as const,
         label: "测试",
         labelEn: "Test",
         notes: "",

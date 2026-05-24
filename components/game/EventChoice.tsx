@@ -14,6 +14,13 @@ interface EventChoiceProps {
 
 const keyLabels = ["其一", "其二", "其三"];
 
+function formatChanges(changes: EventChoiceData["stat_changes"]): string {
+  return Object.entries(changes)
+    .filter(([, val]) => val !== 0)
+    .map(([stat, val]) => `${formatStatLabel(stat)} ${val > 0 ? "+" : ""}${val}`)
+    .join(" ");
+}
+
 export function EventChoice({ choice, index, onClick, disabled = false }: EventChoiceProps) {
   return (
     <button
@@ -35,17 +42,27 @@ export function EventChoice({ choice, index, onClick, disabled = false }: EventC
 
       {/* Stat preview */}
       <div className="mt-auto font-mono text-[10.5px] tracking-[0.06em] text-bone-dim pt-2 border-t border-dashed border-hairline flex gap-2 flex-wrap">
-        {Object.entries(choice.stat_changes).map(([stat, val]) => {
-          if (val === 0) return null;
-          const colorClass = val > 0 ? "text-jade" : "text-vermillion";
-          const sign = val > 0 ? "+" : "";
-          return (
-            <span key={stat} className={colorClass}>
-              {formatStatLabel(stat)} {sign}
-              {val}
+        {choice.check ? (
+          <>
+            <span className="text-gold">
+              骰检 {formatStatLabel(choice.check.stat)} / {choice.check.dc}
             </span>
-          );
-        })}
+            <span className="text-jade">成 {formatChanges(choice.check.outcomes.success) || "无事"}</span>
+            <span className="text-vermillion">败 {formatChanges(choice.check.outcomes.fail) || "无事"}</span>
+          </>
+        ) : (
+          Object.entries(choice.stat_changes).map(([stat, val]) => {
+            if (val === 0) return null;
+            const colorClass = val > 0 ? "text-jade" : "text-vermillion";
+            const sign = val > 0 ? "+" : "";
+            return (
+              <span key={stat} className={colorClass}>
+                {formatStatLabel(stat)} {sign}
+                {val}
+              </span>
+            );
+          })
+        )}
       </div>
     </button>
   );

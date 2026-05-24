@@ -1,15 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { createRng } from "../rng";
+import { createRng, type Rng } from "../rng";
 import {
   advanceSeason,
+  applyCatastrophe,
   applyEventChoice,
+  applyEventChoiceWithResult,
+  applyMourning,
   resolveExam,
   resolvePalaceExam,
+  resolveInheritance,
   createCharacter,
   initExamSchedule,
   resetAuxiliaryTools,
 } from "../reducer";
 import type { GameState } from "@/lib/game/schema";
+import { collectModifiers, hasMetaModifier, isActionBlocked } from "../effects";
 
 function makeTestState(): GameState {
   const rng = createRng(42);
@@ -22,7 +27,7 @@ describe("reducer", () => {
       const rng = createRng(42);
       const state = createCharacter("陈", "farming_family", rng);
 
-      expect(state.version).toBe("0.1.0");
+      expect(state.version).toBe("0.2.0");
       expect(state.character.generation).toBe(1);
       expect(state.character.age).toBe(16);
       expect(state.character.origin).toBe("farming_family");
@@ -83,6 +88,12 @@ describe("reducer", () => {
       const rng = createRng(42);
       const state = createCharacter("陈", "farming_family", rng);
       expect(state.character.traits).toContain("宗族荫庇");
+      expect(state.character.skills.map((skill) => skill.id)).toEqual(
+        expect.arrayContaining([
+          "origin_farming_family_passive",
+          "origin_farming_family_active",
+        ])
+      );
     });
   });
 
@@ -125,6 +136,26 @@ describe("reducer", () => {
       // At age 16, decay is 1/year = 0.25/season, rounded to 0
       // So net drive change should be positive from rest
       expect(result.state.character.stats.drive).toBeLessThanOrEqual(100);
+    });
+
+    it("lets rest grant a short-lived inspiration exam buff", () => {
+      const state = makeTestState();
+      state.character.stats.drive = 80;
+      const rolls = [0.1, 1];
+      const rng: Rng = {
+        next: () => rolls.shift() ?? 1,
+        nextInt: (min) => min,
+        nextFloat: () => 0,
+        state: () => [1, 2, 3, 4],
+      };
+
+      const result = advanceSeason(state, "rest", rng);
+      const inspiration = result.state.character.modifiers.find((modifier) =>
+        modifier.id.startsWith("event_inspiration")
+      );
+
+      expect(inspiration?.effect).toEqual({ kind: "exam_score", value: 5 });
+      expect(inspiration?.turns_remaining).toBe(4);
     });
 
     it("detects drive=0 death condition", () => {
@@ -244,6 +275,170 @@ describe("reducer", () => {
       };
       expect(() => applyEventChoice(state, "nonexistent")).toThrow();
     });
+
+    it("resolves dice-check event choices through seeded roll outcomes", () => {
+      const state = makeTestState();
+      state.character.stats.fortune = 40;
+      state.current_event = {
+        id: "dice_event",
+        type: "social",
+        title: "席间试探",
+        description: "A test event",
+        choices: [
+          {
+            id: "choice_a",
+            label: "察言观色",
+            stat_changes: { erudition: 0, fortune: 0, drive: 0, wealth: 0 },
+            check: {
+              stat: "fortune",
+              dc: 12,
+              outcomes: {
+                crit_success: { erudition: 0, fortune: 12, drive: 0, wealth: 0 },
+                success: { erudition: 0, fortune: 6, drive: 0, wealth: 0 },
+                fail: { erudition: 0, fortune: -3, drive: 0, wealth: 0 },
+                crit_fail: { erudition: 0, fortune: -9, drive: -3, wealth: 0 },
+              },
+            },
+            risk: null,
+            narrative_hint: "局面有变",
+          },
+          {
+            id: "choice_b",
+            label: "退席",
+            stat_changes: { erudition: 0, fortune: 0, drive: 0, wealth: 0 },
+            risk: null,
+            narrative_hint: "",
+          },
+        ],
+        allows_free_input: false,
+        context_for_judge: { relevant_npcs: [], relevant_items: [] },
+      };
+
+      const result = applyEventChoiceWithResult(state, "choice_a", createRng(7));
+      if (!result.roll) throw new Error("expected dice roll");
+      const expected = state.current_event.choices[0].check!.outcomes[result.roll.tier];
+
+      expect(result.statChanges).toEqual(expected);
+      expect(result.state.character.stats.fortune).toBe(40 + expected.fortune);
+      expect(result.state.current_event).toBeNull();
+    });
+
+    it("queues relic drafts from typed event rewards", () => {
+      const state = makeTestState();
+      state.current_event = {
+        id: "reward_event",
+        type: "opportunity",
+        title: "旧柜开启",
+        description: "A test event",
+        choices: [
+          {
+            id: "choice_a",
+            label: "取一件",
+            stat_changes: { erudition: 0, fortune: 0, drive: 0, wealth: 0 },
+            risk: null,
+            narrative_hint: "",
+          },
+          {
+            id: "choice_b",
+            label: "离开",
+            stat_changes: { erudition: 0, fortune: 0, drive: 0, wealth: 0 },
+            risk: null,
+            narrative_hint: "",
+          },
+        ],
+        allows_free_input: false,
+        context_for_judge: { relevant_npcs: [], relevant_items: [] },
+        reward: {
+          type: "relic_draft",
+          relic_ids: ["wenquxing_charm", "inkstone_of_focus", "lucky_coin"],
+          skill_id: null,
+          buff: null,
+        },
+      };
+
+      const result = applyEventChoiceWithResult(state, "choice_a", createRng(5));
+
+      expect(result.relicDraft?.source).toBe("event");
+      expect(result.state.pending_relic_draft?.options.map((option) => option.relic.id)).toEqual([
+        "wenquxing_charm",
+        "inkstone_of_focus",
+        "lucky_coin",
+      ]);
+    });
+  });
+
+  describe("mourning and catastrophe", () => {
+    it("applies mourning as a typed action-block modifier", () => {
+      const state = makeTestState();
+      const result = applyMourning(state);
+      const modifiers = collectModifiers(result.character, result.world);
+
+      expect(isActionBlocked("socialize", modifiers)).toBe(true);
+      expect(isActionBlocked("scheme", modifiers)).toBe(true);
+      expect(isActionBlocked("study", modifiers)).toBe(false);
+    });
+
+    it("recognizes obituary fallback events as mourning triggers", () => {
+      const state = makeTestState();
+      state.current_event = {
+        id: "event_misfortune_1",
+        type: "misfortune",
+        title: "讣音入门",
+        description: "家中长辈病逝，白布悬门。",
+        choices: [
+          {
+            id: "choice_a",
+            label: "依礼守孝",
+            stat_changes: { erudition: 0, fortune: 4, drive: -4, wealth: -2 },
+            risk: null,
+            narrative_hint: "名声稍安，仕途暂缓。",
+          },
+          {
+            id: "choice_b",
+            label: "强忍读书",
+            stat_changes: { erudition: 3, fortune: -6, drive: -6, wealth: 0 },
+            risk: null,
+            narrative_hint: "书声未断，人言也不会断。",
+          },
+        ],
+        allows_free_input: false,
+        context_for_judge: { relevant_npcs: [], relevant_items: [] },
+      };
+
+      const result = applyEventChoiceWithResult(state, "choice_a", createRng(5));
+      const modifiers = collectModifiers(result.state.character, result.state.world);
+
+      expect(isActionBlocked("socialize", modifiers)).toBe(true);
+      expect(isActionBlocked("scheme", modifiers)).toBe(true);
+    });
+
+    it("lets mourning_exemption skip mourning and gain fortune", () => {
+      const state = makeTestState();
+      state.character.modifiers.push({
+        id: "blessing_mourning_exemption_0",
+        source: { type: "blessing", id: "mourning_exemption" },
+        label: "夺情特许",
+        effect: { kind: "meta", key: "skip_mourning", value: 1 },
+        turns_remaining: null,
+      });
+
+      const result = applyMourning(state);
+      const modifiers = collectModifiers(result.character, result.world);
+
+      expect(result.character.stats.fortune).toBe(state.character.stats.fortune + 10);
+      expect(isActionBlocked("socialize", modifiers)).toBe(false);
+    });
+
+    it("marks catastrophe survival and queues a survival relic draft", () => {
+      const state = makeTestState();
+      const result = applyCatastrophe(state, createRng(9));
+      const modifiers = collectModifiers(result.state.character, result.state.world);
+
+      expect(hasMetaModifier("catastrophe_survivor", modifiers)).toBe(true);
+      expect(result.relicDraft?.source).toBe("catastrophe");
+      expect(result.state.pending_relic_draft?.options).toHaveLength(3);
+      expect(result.state.character.stats.drive).toBe(state.character.stats.drive - 10);
+    });
   });
 
   describe("resolveExam", () => {
@@ -358,6 +553,52 @@ describe("reducer", () => {
 
       expect(result.playerTitle).toBe("探花");
       expect(result.state.dynasty.highest_title_ever).toBe("榜眼");
+    });
+  });
+
+  describe("resolveInheritance", () => {
+    it("turns purchased inert blessings into typed modifiers for the heir", () => {
+      const state = makeTestState();
+      const result = resolveInheritance(
+        state,
+        0,
+        ["photographic_memory", "merchant_lineage"],
+        createRng(200)
+      );
+
+      expect(result.state.character.modifiers.map((modifier) => modifier.id)).toEqual(
+        expect.arrayContaining([
+          "blessing_photographic_memory_0",
+          "blessing_merchant_lineage_0",
+        ])
+      );
+      expect(result.state.dynasty.legacy.ancestral_blessings.map((blessing) => blessing.id)).toEqual(
+        expect.arrayContaining(["photographic_memory", "merchant_lineage"])
+      );
+      expect(
+        result.state.dynasty.available_blessings.find((blessing) => blessing.id === "merchant_lineage")?.unlocked
+      ).toBe(true);
+    });
+
+    it("applies existing ancestral blessings without repurchasing them", () => {
+      const state = makeTestState();
+      state.dynasty.legacy.ancestral_blessings = [
+        {
+          id: "official_connections",
+          name: "官场人脉",
+          effect: "socialize_fortune_+3",
+          unlocked_gen: 1,
+        },
+      ];
+
+      const result = resolveInheritance(state, 0, [], createRng(200));
+
+      expect(result.state.character.modifiers.map((modifier) => modifier.id)).toEqual(
+        expect.arrayContaining([
+          "blessing_official_connections_0",
+          "blessing_official_connections_1",
+        ])
+      );
     });
   });
 

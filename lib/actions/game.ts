@@ -1,10 +1,24 @@
 "use server";
 
-import type { GameState, Npc, CurrentEvent } from "@/lib/game/schema";
+import type { GameState, Npc, CurrentEvent, Relic, RelicDraft } from "@/lib/game/schema";
 import type { Origin, ExamLevel, EventType } from "@/lib/game/constants";
-import { createCharacter, advanceSeason, applyEventChoice, resolveExam, resolvePalaceExam } from "@/lib/engine/reducer";
+import {
+  createCharacter,
+  advanceSeason,
+  applyEventChoiceWithResult,
+  resolveExam,
+  resolvePalaceExam,
+} from "@/lib/engine/reducer";
 import { createRng } from "@/lib/engine/rng";
+import type { RollCheckResult } from "@/lib/engine/dice";
 import { applyStatChanges } from "@/lib/engine/balance";
+import {
+  chooseRelicFromDraft,
+  createMerchantRelicDraft,
+  queueRelicDraft,
+  RELIC_CATALOG,
+} from "@/lib/engine/relics";
+import { applyStartingPackage, type StartingPackage } from "@/lib/engine/starts";
 import { loadSave, createSave, upsertSave } from "@/lib/db/queries";
 import { generateEvent } from "@/lib/ai/contracts/event";
 import { evaluateEventFreeInput } from "@/lib/ai/contracts/eventEval";
@@ -62,17 +76,44 @@ const NPC_PERSONALITIES = ["strict", "warm", "corrupt", "idealistic"] as const;
 export interface NewGameResult {
   id: string;
   state: GameState;
+  seed: number;
+  startingPackage: StartingPackage;
 }
 
 export async function newGame(
   familyName: string,
-  origin: Origin
+  origin: Origin,
+  seedInput?: number
 ): Promise<NewGameResult> {
-  const seed = Date.now() % 2147483647;
+  const seed = normalizeSeed(seedInput ?? Date.now());
   const rng = createRng(seed);
-  const state = createCharacter(familyName || "张", origin, rng);
+  const baseState = createCharacter(familyName || "张", origin, rng);
+  const { state, startingPackage } = applyStartingPackage(baseState, rng, seed);
   const id = await createSave(state);
-  return { id, state };
+  return { id, state, seed, startingPackage };
+}
+
+export interface NewGamePreview {
+  state: GameState;
+  seed: number;
+  startingPackage: StartingPackage;
+}
+
+export async function previewNewGame(
+  familyName: string,
+  origin: Origin,
+  seedInput?: number
+): Promise<NewGamePreview> {
+  const seed = normalizeSeed(seedInput ?? Date.now());
+  const rng = createRng(seed);
+  const baseState = createCharacter(familyName || "张", origin, rng);
+  const { state, startingPackage } = applyStartingPackage(baseState, rng, seed);
+  return { state, seed, startingPackage };
+}
+
+function normalizeSeed(seed: number): number {
+  const normalized = Math.abs(Math.trunc(seed)) % 2147483647;
+  return normalized === 0 ? 1 : normalized;
 }
 
 // ── loadGame ─────────────────────────────────────────────────────────────────
@@ -92,6 +133,7 @@ export interface AdvanceTurnResult {
   schemeExposed: boolean;
   characterDied: boolean;
   deathReason: "drive_zero" | "max_age" | null;
+  relicDraft: RelicDraft | null;
 }
 
 export async function advanceTurn(
@@ -198,6 +240,13 @@ export async function advanceTurn(
   }
 
   if (actionId === "scheme") {
+    if (!result.state.world.court_whims_revealed.style_known) {
+      result.state.world.court_whims_revealed.style_known = true;
+      npcDialogue = npcDialogue
+        ? `${npcDialogue} （探得本朝文风）`
+        : "钻营打点之间，探得本朝文风。";
+    }
+
     // 20% chance to create a patron NPC
     if (result.state.npcs.filter((n) => n.alive).length < 5 && npcRng.next() < 0.20) {
       const newNpc = createRandomNpc(result.state, npcRng, "patron");
@@ -207,7 +256,8 @@ export async function advanceTurn(
         type: "patron",
         affinity: 25,
       });
-      npcDialogue = `结识了${newNpc.name}（${npcRoleLabel(newNpc.role)}），或可为仕途助力。`;
+      const patronMessage = `结识了${newNpc.name}（${npcRoleLabel(newNpc.role)}），或可为仕途助力。`;
+      npcDialogue = npcDialogue ? `${npcDialogue} ${patronMessage}` : patronMessage;
     }
   }
 
@@ -234,13 +284,17 @@ export async function advanceTurn(
       available_npcs: result.state.npcs
         .filter((n) => n.alive)
         .map((n) => ({ name: n.name, role: n.role })),
+      available_relic_pool: RELIC_CATALOG.map((relic) => relic.id),
+      character_skills: result.state.character.skills.map((skill) => skill.name),
+      character_relics: result.state.character.relics.map((relic) => relic.name),
+      world_modifier: result.state.world.world_modifiers[0]?.label ?? null,
     };
 
     const v1Event = await generateEvent(v1Input);
 
     // Map V1Event to CurrentEvent schema
     const currentEvent: CurrentEvent = {
-      id: `evt_${result.state.turn_number}_${Date.now() % 10000}`,
+      id: `evt_${result.state.turn_number}_${eventType}`,
       type: eventType,
       title: v1Event.title,
       description: v1Event.description,
@@ -248,6 +302,7 @@ export async function advanceTurn(
         id: c.id,
         label: c.label,
         stat_changes: c.stat_changes,
+        check: c.check ?? null,
         risk: null,
         narrative_hint: c.narrative_preview,
       })),
@@ -256,6 +311,7 @@ export async function advanceTurn(
         relevant_npcs: result.state.npcs.filter((n) => n.alive).map((n) => n.name),
         relevant_items: result.state.character.inventory.map((i) => i.name),
       },
+      reward: v1Event.reward ?? null,
     };
 
     result.state.current_event = currentEvent;
@@ -274,6 +330,96 @@ export async function advanceTurn(
     schemeExposed: result.schemeExposed,
     characterDied: result.characterDied,
     deathReason: result.deathReason,
+    relicDraft: result.relicDraft,
+  };
+}
+
+// ── Relic Drafts / Merchant Shop ─────────────────────────────────────────────
+
+export interface RelicDraftActionResult {
+  success: boolean;
+  message: string;
+  state: GameState;
+  draft: RelicDraft | null;
+}
+
+export interface RelicChoiceResult {
+  success: boolean;
+  message: string;
+  state: GameState;
+  relic: Relic | null;
+}
+
+export async function openMerchantShop(saveId: string): Promise<RelicDraftActionResult> {
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
+
+  if (currentState.pending_relic_draft) {
+    return {
+      success: true,
+      message: "已有待选择的宝物。",
+      state: currentState,
+      draft: currentState.pending_relic_draft,
+    };
+  }
+
+  if (currentState.character.stats.wealth < 15) {
+    return {
+      success: false,
+      message: "银两不足，钱庄掌柜只是笑而不语。",
+      state: currentState,
+      draft: null,
+    };
+  }
+
+  const rng = createRng(currentState.rng_seed);
+  const draft = createMerchantRelicDraft(currentState, rng);
+  const newState = queueRelicDraft(currentState, draft);
+  newState.rng_seed = rng.nextInt(0, 2147483647);
+
+  await upsertSave(saveId, newState);
+  return {
+    success: true,
+    message: "钱庄暗柜打开，三件奇物静候挑选。",
+    state: newState,
+    draft,
+  };
+}
+
+export async function chooseRelicDraft(
+  saveId: string,
+  relicId: string
+): Promise<RelicChoiceResult> {
+  const currentState = await loadSave(saveId);
+  if (!currentState) throw new Error("save_not_found");
+
+  const option = currentState.pending_relic_draft?.options.find(
+    (candidate) => candidate.relic.id === relicId
+  );
+  if (!option) {
+    return {
+      success: false,
+      message: "没有这件可选宝物。",
+      state: currentState,
+      relic: null,
+    };
+  }
+  if (option.cost > currentState.character.stats.wealth) {
+    return {
+      success: false,
+      message: "银两不足，买不起这件宝物。",
+      state: currentState,
+      relic: null,
+    };
+  }
+
+  const newState = chooseRelicFromDraft(currentState, relicId);
+  await upsertSave(saveId, newState);
+  return {
+    success: true,
+    message: `获得${option.relic.name}。`,
+    state: newState,
+    relic: option.relic,
   };
 }
 
@@ -282,6 +428,9 @@ export async function advanceTurn(
 export interface EventChoiceResult {
   state: GameState;
   narration: string;
+  statChanges: { erudition: number; fortune: number; drive: number; wealth: number };
+  roll: RollCheckResult | null;
+  relicDraft: RelicDraft | null;
 }
 
 export async function submitEventChoice(
@@ -291,13 +440,21 @@ export async function submitEventChoice(
   const currentState = await loadSave(saveId);
   if (!currentState) throw new Error("save_not_found");
 
-  const newState = applyEventChoice(currentState, choiceId);
+  const rng = createRng(currentState.rng_seed);
+  const result = applyEventChoiceWithResult(currentState, choiceId, rng);
+  result.state.rng_seed = rng.nextInt(0, 2147483647);
 
   const choice = currentState.current_event?.choices.find((c) => c.id === choiceId);
   const narration = choice?.narrative_hint || "事情就这样过去了。";
 
-  await upsertSave(saveId, newState);
-  return { state: newState, narration };
+  await upsertSave(saveId, result.state);
+  return {
+    state: result.state,
+    narration,
+    statChanges: result.statChanges,
+    roll: result.roll,
+    relicDraft: result.relicDraft,
+  };
 }
 
 // ── submitEventFreeInput ──────────────────────────────────────────────────────
@@ -414,9 +571,12 @@ import {
   scoreFreeText,
   examThreshold,
   evaluateRiskCondition,
+  rollExamPerformance,
+  type ExamPerformance,
   type RiskCondition,
   type CourtWhims,
 } from "@/lib/engine/exam";
+import { collectModifiers } from "@/lib/engine/effects";
 import { generateExamQuestion } from "@/lib/ai/contracts/examQuestion";
 import { evaluateFreeText } from "@/lib/ai/contracts/judge";
 import { generateNarration } from "@/lib/ai/contracts/narrate";
@@ -459,6 +619,7 @@ export interface ExamResult {
   judgeNarrative: string | null;
   riskTriggered: boolean;
   riskPenalty: { drive: number; fortune: number } | null;
+  performance: ExamPerformance;
   state: GameState;
 }
 
@@ -474,6 +635,9 @@ export async function submitExamAnswer(
   if (!currentState) throw new Error("save_not_found");
   const { character, world } = currentState;
   const erudition = character.stats.erudition;
+  const rng = createRng(currentState.rng_seed);
+  const modifiers = collectModifiers(character, world);
+  const performance = rollExamPerformance(character.stats, modifiers, rng);
 
   let score: number;
   let judgeNarrative: string | null = null;
@@ -494,12 +658,11 @@ export async function submitExamAnswer(
       character_items: character.inventory.map((i) => i.name),
     });
 
-    // Free-text score: judge_lm_score * 0.7 + erudition * 0.3
-    // With cheat sheet: erudition * 0.6 instead of * 0.3
-    const eruditionBonus = cheatSheetActive ? erudition * 0.6 : erudition * 0.3;
-    score = Math.round(
-      Math.max(0, Math.min(100, judgeResult.total_score * 0.7 + eruditionBonus))
-    );
+    score = scoreFreeText(judgeResult.total_score, erudition, examLevel, modifiers, {
+      variance: performance.variance,
+      cheatSheetActive,
+      judgeAlignmentScore: judgeResult.scores.alignment,
+    });
     judgeNarrative = judgeResult.judge_narrative;
     // No risk evaluation for free-text answers
   } else if (choiceId) {
@@ -509,17 +672,10 @@ export async function submitExamAnswer(
       throw new Error(`Invalid choice ID: ${choiceId}`);
     }
 
-    // Court whims alignment bonus
-    let courtWhimsBonus = 0;
-    if (choice.alignment === "full") courtWhimsBonus = 20;
-    else if (choice.alignment === "partial") courtWhimsBonus = 10;
-
-    // Fixed choice score: base + erudition*0.3 + court_whims_bonus
-    // With cheat sheet: erudition*0.6 instead of *0.3
-    const eruditionBonus = cheatSheetActive ? erudition * 0.6 : erudition * 0.3;
-    score = Math.round(
-      Math.max(0, Math.min(100, choice.base_score + eruditionBonus + courtWhimsBonus))
-    );
+    score = scoreFixedChoice(choice.base_score, erudition, choice.alignment, examLevel, modifiers, {
+      variance: performance.variance,
+      cheatSheetActive,
+    });
 
     // Evaluate risk condition
     if (choice.risk) {
@@ -562,7 +718,8 @@ export async function submitExamAnswer(
     examLevel,
     world.era,
     character.generation,
-    character.stats.fortune
+    character.stats.fortune,
+    modifiers
   );
   const passed = threshold === null ? true : score >= threshold;
 
@@ -572,6 +729,7 @@ export async function submitExamAnswer(
     : undefined;
   const resolution = resolveExam(currentState, examLevel, score, passed, riskPenaltyChanges);
   const newState = resolution.state;
+  newState.rng_seed = rng.nextInt(0, 2147483647);
 
   // Drive cost for taking exam
   const examDriveCost = -5;
@@ -607,6 +765,7 @@ export async function submitExamAnswer(
     judgeNarrative,
     riskTriggered,
     riskPenalty,
+    performance,
     state: newState,
   };
 }
@@ -662,6 +821,13 @@ export async function applyToolAction(
         });
         newState.character.status_effects.push({
           type: "exam_ban",
+          turns_remaining: 12,
+        });
+        newState.character.modifiers.push({
+          id: `tool_exam_ban_${newState.turn_number}`,
+          source: { type: "tool", id: "cheat_sheet" },
+          label: "科考禁令",
+          effect: { kind: "meta", key: "exam_ban", value: 1 },
           turns_remaining: 12,
         });
         newState.rng_seed = rng.nextInt(0, 2147483647);
@@ -928,13 +1094,21 @@ export async function chooseHeir(
   saveId: string,
   heirIndex: number,
   purchasedBlessingIds: string[],
-  heirInput?: HeirInput
+  heirInput?: HeirInput,
+  heirloomRelicId: string | null = null
 ): Promise<ChooseHeirResult> {
   const currentState = await loadSave(saveId);
   if (!currentState) throw new Error("save_not_found");
   const rng = createRng(currentState.rng_seed);
 
-  const result = resolveInheritance(currentState, heirIndex, purchasedBlessingIds, rng, heirInput);
+  const result = resolveInheritance(
+    currentState,
+    heirIndex,
+    purchasedBlessingIds,
+    rng,
+    heirInput,
+    heirloomRelicId
+  );
 
   // Handle NPC era-change rules
   if (result.eraTransitioned) {
@@ -1019,6 +1193,7 @@ export interface PalaceExamResult {
   victoryTier: VictoryTier;
   state: GameState;
   judgeNarrative: string | null;
+  performance: ExamPerformance;
 }
 
 export async function submitPalaceExam(
@@ -1032,6 +1207,9 @@ export async function submitPalaceExam(
   if (!currentState) throw new Error("save_not_found");
   const { character, world, dynasty } = currentState;
   const erudition = character.stats.erudition;
+  const rng = createRng(currentState.rng_seed);
+  const modifiers = collectModifiers(character, world);
+  const performance = rollExamPerformance(character.stats, modifiers, rng);
 
   // ── Step 1: Score the player's answer (same as regular exam) ──
   let playerScore: number;
@@ -1050,23 +1228,20 @@ export async function submitPalaceExam(
       character_items: character.inventory.map((i) => i.name),
     });
 
-    const eruditionBonus = cheatSheetActive ? erudition * 0.6 : erudition * 0.3;
-    playerScore = Math.round(
-      Math.max(0, Math.min(100, judgeResult.total_score * 0.7 + eruditionBonus))
-    );
+    playerScore = scoreFreeText(judgeResult.total_score, erudition, "palace", modifiers, {
+      variance: performance.variance,
+      cheatSheetActive,
+      judgeAlignmentScore: judgeResult.scores.alignment,
+    });
     judgeNarrative = judgeResult.judge_narrative;
   } else if (choiceId) {
     const choice = question.choices.find((c) => c.id === choiceId);
     if (!choice) throw new Error(`Invalid choice ID: ${choiceId}`);
 
-    let courtWhimsBonus = 0;
-    if (choice.alignment === "full") courtWhimsBonus = 20;
-    else if (choice.alignment === "partial") courtWhimsBonus = 10;
-
-    const eruditionBonus = cheatSheetActive ? erudition * 0.6 : erudition * 0.3;
-    playerScore = Math.round(
-      Math.max(0, Math.min(100, choice.base_score + eruditionBonus + courtWhimsBonus))
-    );
+    playerScore = scoreFixedChoice(choice.base_score, erudition, choice.alignment, "palace", modifiers, {
+      variance: performance.variance,
+      cheatSheetActive,
+    });
   } else {
     throw new Error("Must provide either choiceId or freeText");
   }
@@ -1094,6 +1269,7 @@ export async function submitPalaceExam(
   newState.character.stats = applyStatChanges(newState.character.stats, {
     erudition: 0, fortune: 0, drive: -5, wealth: 0,
   });
+  newState.rng_seed = rng.nextInt(0, 2147483647);
 
   // ── Step 4: Generate narration via R1 (include emperor's 御评) ──
   const champion = ranking[0];
@@ -1121,6 +1297,7 @@ export async function submitPalaceExam(
     victoryTier,
     state: newState,
     judgeNarrative,
+    performance,
   };
 }
 

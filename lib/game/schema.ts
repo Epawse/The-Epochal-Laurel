@@ -18,10 +18,169 @@ export const StatsSchema = z.object({
 });
 export type Stats = z.infer<typeof StatsSchema>;
 
+export const StatKeySchema = z.enum(["erudition", "fortune", "drive", "wealth"]);
+export type StatKey = z.infer<typeof StatKeySchema>;
+
+export const ActionIdSchema = z.enum(["study", "socialize", "earn", "rest", "scheme"]);
+export type ActionId = z.infer<typeof ActionIdSchema>;
+
+export const ExamLevelSchema = z.enum(["county", "provincial", "metropolitan", "palace"]);
+export type ExamLevelId = z.infer<typeof ExamLevelSchema>;
+
+export const EventTypeSchema = z.enum(["opportunity", "misfortune", "social", "political"]);
+export type EventTypeId = z.infer<typeof EventTypeSchema>;
+
+export const DiceCategorySchema = z.enum(["social", "scheme", "exam", "event"]);
+export type DiceCategory = z.infer<typeof DiceCategorySchema>;
+
+const ActionTargetSchema = z.union([ActionIdSchema, z.literal("*")]);
+const DiceCategoryTargetSchema = z.union([DiceCategorySchema, z.literal("*")]);
+
+export const EffectSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("action_gain"),
+    action: ActionTargetSchema,
+    stat: StatKeySchema,
+    value: z.number().optional(),
+    mult: z.number().positive().optional(),
+  }),
+  z.object({
+    kind: z.literal("action_cost"),
+    action: ActionTargetSchema,
+    stat: StatKeySchema,
+    value: z.number().min(0),
+  }),
+  z.object({
+    kind: z.literal("action_block"),
+    actions: z.array(ActionIdSchema),
+  }),
+  z.object({
+    kind: z.literal("exam_score"),
+    value: z.number().optional(),
+    mult: z.number().positive().optional(),
+    levels: z.array(ExamLevelSchema).optional(),
+  }),
+  z.object({
+    kind: z.literal("exam_threshold"),
+    levels: z.array(ExamLevelSchema),
+    value: z.number(),
+  }),
+  z.object({
+    kind: z.literal("exam_alignment_relax"),
+    levels: z.array(ExamLevelSchema),
+  }),
+  z.object({
+    kind: z.literal("intel_grant"),
+    dimension: z.enum(["style", "temperament"]),
+    level: z.enum(["partial", "full"]),
+  }),
+  z.object({
+    kind: z.literal("dice_modifier"),
+    category: DiceCategoryTargetSchema,
+    value: z.number(),
+  }),
+  z.object({
+    kind: z.literal("event_bias"),
+    event_type: EventTypeSchema,
+    weight_mult: z.number().positive().optional(),
+    danger_mult: z.number().positive().optional(),
+  }),
+  z.object({
+    kind: z.literal("meta"),
+    key: z.string(),
+    value: z.number(),
+  }),
+]);
+export type Effect = z.infer<typeof EffectSchema>;
+
+export const ModifierSourceSchema = z.object({
+  type: z.enum(["origin", "relic", "skill", "blessing", "event", "world", "tool", "legacy"]),
+  id: z.string(),
+});
+export type ModifierSource = z.infer<typeof ModifierSourceSchema>;
+
+export const ModifierSchema = z.object({
+  id: z.string(),
+  source: ModifierSourceSchema,
+  label: z.string(),
+  effect: EffectSchema,
+  turns_remaining: z.number().int().min(0).nullable().default(null),
+});
+export type Modifier = z.infer<typeof ModifierSchema>;
+
+export const RelicSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  rarity: z.enum(["common", "rare", "legendary"]),
+  slot: z.enum(["common", "heirloom_eligible"]).default("common"),
+  effects: z.array(EffectSchema),
+  flavor: z.string().default(""),
+});
+export type Relic = z.infer<typeof RelicSchema>;
+
+export const RelicDraftSourceSchema = z.enum([
+  "action",
+  "event",
+  "shop",
+  "exam",
+  "catastrophe",
+  "start",
+  "skill",
+]);
+export type RelicDraftSource = z.infer<typeof RelicDraftSourceSchema>;
+
+export const RelicDraftOptionSchema = z.object({
+  relic: RelicSchema,
+  cost: z.number().int().min(0).default(0),
+});
+export type RelicDraftOption = z.infer<typeof RelicDraftOptionSchema>;
+
+export const RelicDraftSchema = z.object({
+  id: z.string(),
+  source: RelicDraftSourceSchema,
+  options: z.array(RelicDraftOptionSchema).length(3),
+  created_turn: z.number().int().min(0),
+});
+export type RelicDraft = z.infer<typeof RelicDraftSchema>;
+
+export const SkillSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.enum(["passive", "active"]),
+  effects: z.array(EffectSchema),
+  cost: StatChangesSchema.partial().optional(),
+  cooldown_cycles: z.number().int().min(0).optional(),
+  cooldown_remaining: z.number().int().min(0).default(0),
+});
+export type Skill = z.infer<typeof SkillSchema>;
+
+export const DiceCheckOutcomesSchema = z.object({
+  crit_success: StatChangesSchema,
+  success: StatChangesSchema,
+  fail: StatChangesSchema,
+  crit_fail: StatChangesSchema,
+});
+export type DiceCheckOutcomes = z.infer<typeof DiceCheckOutcomesSchema>;
+
+export const DiceCheckSchema = z.object({
+  stat: StatKeySchema,
+  dc: z.number().int().min(1),
+  outcomes: DiceCheckOutcomesSchema,
+});
+export type DiceCheck = z.infer<typeof DiceCheckSchema>;
+
+export const EventRewardSchema = z.object({
+  type: z.enum(["relic_draft", "skill_grant", "buff"]),
+  relic_ids: z.array(z.string()).default([]),
+  skill_id: z.string().nullable().default(null),
+  buff: ModifierSchema.nullable().default(null),
+});
+export type EventReward = z.infer<typeof EventRewardSchema>;
+
 // ── Character ───────────────────────────────────────────────────────────────
 
 const ExamHistoryEntrySchema = z.object({
-  level: z.enum(["county", "provincial", "metropolitan", "palace"]),
+  level: ExamLevelSchema,
   year: z.number().int(),
   result: z.enum(["pass", "fail"]),
   score: z.number().int(),
@@ -86,9 +245,14 @@ export const CharacterSchema = z.object({
   titles: z.array(z.string()),
   exam_history: z.array(ExamHistoryEntrySchema),
   relationships: z.array(RelationshipSchema),
-  inventory: z.array(InventoryItemSchema),
-  traits: z.array(z.string()),
-  status_effects: z.array(StatusEffectSchema),
+  inventory: z.array(InventoryItemSchema).default([]),
+  relics: z.array(RelicSchema).default([]),
+  heirloom_relic_id: z.string().nullable().default(null),
+  seen_relic_ids: z.array(z.string()).default([]),
+  traits: z.array(z.string()).default([]),
+  skills: z.array(SkillSchema).default([]),
+  status_effects: z.array(StatusEffectSchema).default([]),
+  modifiers: z.array(ModifierSchema).default([]),
   family: FamilySchema,
 });
 export type Character = z.infer<typeof CharacterSchema>;
@@ -129,6 +293,7 @@ export const WorldSchema = z.object({
   court_whims: CourtWhimsSchema,
   court_whims_revealed: CourtWhimsRevealedSchema,
   events_this_era: z.array(z.string()),
+  world_modifiers: z.array(ModifierSchema).default([]),
   exam_schedule: ExamScheduleSchema,
   auxiliary_tools: AuxiliaryToolsSchema,
 });
@@ -176,6 +341,7 @@ export const DynastySchema = z.object({
   ancestors: z.array(AncestorSchema),
   blessing_points: z.number().int().min(0),
   available_blessings: z.array(AvailableBlessingSchema),
+  pending_heirloom: RelicSchema.nullable().default(null),
 });
 export type Dynasty = z.infer<typeof DynastySchema>;
 
@@ -205,6 +371,7 @@ const EventChoiceSchema = z.object({
   id: z.string(),
   label: z.string(),
   stat_changes: StatChangesSchema,
+  check: DiceCheckSchema.nullable().optional(),
   risk: z
     .object({
       condition: z.string(),
@@ -214,10 +381,11 @@ const EventChoiceSchema = z.object({
     .nullable(),
   narrative_hint: z.string(),
 });
+export type EventChoice = z.infer<typeof EventChoiceSchema>;
 
 export const CurrentEventSchema = z.object({
   id: z.string(),
-  type: z.enum(["opportunity", "misfortune", "social", "political"]),
+  type: EventTypeSchema,
   title: z.string(),
   description: z.string(),
   choices: z.array(EventChoiceSchema).min(2).max(3),
@@ -226,6 +394,7 @@ export const CurrentEventSchema = z.object({
     relevant_npcs: z.array(z.string()),
     relevant_items: z.array(z.string()),
   }),
+  reward: EventRewardSchema.nullable().optional(),
 });
 export type CurrentEvent = z.infer<typeof CurrentEventSchema>;
 
@@ -238,6 +407,7 @@ export const GameStateSchema = z.object({
   dynasty: DynastySchema,
   npcs: z.array(NpcSchema),
   current_event: CurrentEventSchema.nullable(),
+  pending_relic_draft: RelicDraftSchema.nullable().default(null),
   turn_number: z.number().int().min(0),
   rng_seed: z.number().int(),
 });

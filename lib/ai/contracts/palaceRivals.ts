@@ -15,12 +15,12 @@ import { log } from "../../log";
 
 /**
  * Determine rival_strength from dynasty generation.
- * weak: gen <= 2, moderate: gen 3-4, strong: gen >= 5
+ * moderate: gen <= 2, strong: gen 3-4, elite: gen >= 5
  */
 export function getRivalStrength(dynastyGeneration: number): RivalStrength {
-  if (dynastyGeneration <= 2) return "weak";
-  if (dynastyGeneration <= 4) return "moderate";
-  return "strong";
+  if (dynastyGeneration <= 2) return "moderate";
+  if (dynastyGeneration <= 4) return "strong";
+  return "elite";
 }
 
 export async function generatePalaceRivals(input: E3Input): Promise<E3Rivals> {
@@ -55,9 +55,9 @@ export async function generatePalaceRivals(input: E3Input): Promise<E3Rivals> {
 // ── Score Ranges by Strength ─────────────────────────────────────────────────
 
 const STRENGTH_RANGES: Record<RivalStrength, { min: number; max: number; mid: number }> = {
-  weak: { min: 40, max: 65, mid: 52 },
   moderate: { min: 55, max: 80, mid: 67 },
-  strong: { min: 70, max: 95, mid: 82 },
+  strong: { min: 65, max: 90, mid: 77 },
+  elite: { min: 75, max: 95, mid: 85 },
 };
 
 // ── Procedural Fallback ──────────────────────────────────────────────────────

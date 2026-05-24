@@ -26,8 +26,13 @@ function makeCharacter(overrides: Partial<Character> = {}): Character {
     exam_history: [],
     relationships: [],
     inventory: [],
+    relics: [],
+    heirloom_relic_id: null,
+    seen_relic_ids: [],
     traits: [],
+    skills: [],
     status_effects: [],
+    modifiers: [],
     family: { spouse: null, children: [] },
     ...overrides,
   };

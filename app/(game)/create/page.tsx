@@ -6,7 +6,7 @@ import { TopBar } from "@/components/game/TopBar";
 import { ErrorToast } from "@/components/ui/ErrorToast";
 import { ORIGINS, type Origin, type OriginDef } from "@/lib/game/constants";
 import { formatStatLabel, ORIGIN_FLAVORS } from "@/lib/game/display";
-import { newGame } from "@/lib/actions/game";
+import { newGame, previewNewGame, type NewGamePreview } from "@/lib/actions/game";
 import { setSaveId } from "@/lib/client/saveId";
 import { setSessionJSON } from "@/hooks/useSessionJSON";
 
@@ -98,19 +98,64 @@ export default function CreatePage() {
   const router = useRouter();
   const [familyName, setFamilyName] = useState("");
   const [selectedOrigin, setSelectedOrigin] = useState<Origin | null>(null);
+  const [seedText, setSeedText] = useState("");
+  const [preview, setPreview] = useState<NewGamePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isPreviewPending, startPreviewTransition] = useTransition();
 
   const selectedDef = selectedOrigin ? ORIGINS[selectedOrigin] : null;
-  const canConfirm = selectedOrigin !== null && !isPending;
+  const canConfirm = selectedOrigin !== null && !isPending && !isPreviewPending;
+
+  function parseSeedInput(): number | undefined | null {
+    const trimmed = seedText.trim();
+    if (!trimmed) return undefined;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return parsed;
+  }
+
+  function handlePreview(useTypedSeed: boolean) {
+    if (!selectedOrigin || isPending || isPreviewPending) return;
+    const parsedSeed = useTypedSeed ? parseSeedInput() : undefined;
+    if (parsedSeed === null) {
+      setError("命种需为正整数。");
+      return;
+    }
+
+    startPreviewTransition(async () => {
+      setError(null);
+      try {
+        const result = await previewNewGame(
+          familyName || "张",
+          selectedOrigin,
+          parsedSeed
+        );
+        setPreview(result);
+        setSeedText(String(result.seed));
+      } catch (e) {
+        console.warn("Failed to preview a new game:", e);
+        setError("暂时无法预览开局，请稍后再试。");
+      }
+    });
+  }
 
   function handleConfirm() {
     if (!selectedOrigin || isPending) return;
+    const parsedSeed = preview?.seed ?? parseSeedInput();
+    if (parsedSeed === null) {
+      setError("命种需为正整数。");
+      return;
+    }
 
     startTransition(async () => {
       setError(null);
       try {
-        const { id, state } = await newGame(familyName || "张", selectedOrigin);
+        const { id, state } = await newGame(
+          familyName || "张",
+          selectedOrigin,
+          parsedSeed
+        );
         setSaveId(id);
         setSessionJSON("game_state", state);
         router.push("/play");
@@ -177,7 +222,10 @@ export default function CreatePage() {
             <input
               type="text"
               value={familyName}
-              onChange={(e) => setFamilyName(e.target.value)}
+              onChange={(e) => {
+                setFamilyName(e.target.value);
+                setPreview(null);
+              }}
               placeholder="姓"
               maxLength={4}
               className="flex-1 bg-[rgba(15,12,8,0.5)] border border-hairline px-3.5 py-2.5 font-calli text-[30px] text-gold-glow tracking-[0.16em] text-center outline-none transition-colors duration-200 focus:border-gold placeholder:text-bone-mute placeholder:text-xl"
@@ -204,6 +252,67 @@ export default function CreatePage() {
               )}
             </dd>
           </div>
+
+          <div className="border border-dashed border-hairline p-3 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] tracking-[0.22em] text-bone-mute uppercase">
+                命种
+              </span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={seedText}
+                onChange={(e) => {
+                  setSeedText(e.target.value);
+                  setPreview(null);
+                }}
+                placeholder="留空随机"
+                className="min-w-0 flex-1 bg-[rgba(15,12,8,0.5)] border border-hairline px-2.5 py-2 font-mono text-[13px] text-bone tracking-[0.08em] outline-none transition-colors duration-200 focus:border-gold placeholder:text-bone-mute"
+                aria-label="开局命种"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={!selectedOrigin || isPending || isPreviewPending}
+                onClick={() => handlePreview(true)}
+                className="border border-hairline px-3 py-2 font-serif text-[13px] tracking-[0.16em] text-bone hover:border-gold-dim hover:text-gold disabled:text-bone-mute disabled:cursor-not-allowed"
+              >
+                验种
+              </button>
+              <button
+                type="button"
+                disabled={!selectedOrigin || isPending || isPreviewPending}
+                onClick={() => handlePreview(false)}
+                className="border border-hairline px-3 py-2 font-serif text-[13px] tracking-[0.16em] text-bone hover:border-gold-dim hover:text-gold disabled:text-bone-mute disabled:cursor-not-allowed"
+              >
+                {isPreviewPending ? "推演中" : "重骰"}
+              </button>
+            </div>
+            {preview ? (
+              <div className="flex flex-col gap-2 border-t border-hairline pt-3">
+                <div className="grid grid-cols-2 gap-1.5">
+                  {Object.entries(preview.state.character.stats).map(([stat, value]) => (
+                    <span
+                      key={stat}
+                      className="font-mono text-[11px] text-bone-dim tracking-[0.08em]"
+                    >
+                      {formatStatLabel(stat)} <b className="text-gold font-normal">{value}</b>
+                    </span>
+                  ))}
+                </div>
+                <p className="m-0 font-serif text-[13px] text-bone tracking-[0.06em] leading-relaxed">
+                  {preview.startingPackage.bonusTrait} ·{" "}
+                  {preview.startingPackage.bonusRelic.name} ·{" "}
+                  {preview.startingPackage.bonusSkill.name}
+                </p>
+              </div>
+            ) : (
+              <p className="m-0 font-serif text-[12.5px] text-bone-mute tracking-[0.04em] leading-relaxed">
+                选定出身后可验种或重骰，满意再入世。
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Right column — Main */}
@@ -229,7 +338,10 @@ export default function CreatePage() {
                 origin={origin}
                 index={i}
                 selected={selectedOrigin === origin.id}
-                onSelect={() => setSelectedOrigin(origin.id)}
+                onSelect={() => {
+                  setSelectedOrigin(origin.id);
+                  setPreview(null);
+                }}
               />
             ))}
           </div>

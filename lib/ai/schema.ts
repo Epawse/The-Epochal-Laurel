@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import type { Era, Season, EventType } from "../game/constants";
+import { ModifierSchema } from "../game/schema";
 
 export type { Era, Season, EventType } from "../game/constants";
 
@@ -20,11 +21,30 @@ export type StatChanges = z.infer<typeof StatChangesSchema>;
 
 // ── V1: Random Event Generation ─────────────────────────────────────────────
 
+export const V1DiceCheckSchema = z.object({
+  stat: z.enum(["erudition", "fortune", "drive", "wealth"]),
+  dc: z.number().int().min(6).max(16),
+  outcomes: z.object({
+    crit_success: StatChangesSchema,
+    success: StatChangesSchema,
+    fail: StatChangesSchema,
+    crit_fail: StatChangesSchema,
+  }),
+});
+
 export const V1EventChoiceSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   stat_changes: StatChangesSchema,
   narrative_preview: z.string().default(""),
+  check: V1DiceCheckSchema.nullable().optional(),
+});
+
+export const V1EventRewardSchema = z.object({
+  type: z.enum(["relic_draft", "skill_grant", "buff"]),
+  relic_ids: z.array(z.string()).default([]),
+  skill_id: z.string().nullable().default(null),
+  buff: ModifierSchema.nullable().default(null),
 });
 
 export const V1EventSchema = z.object({
@@ -33,6 +53,7 @@ export const V1EventSchema = z.object({
   choices: z.array(V1EventChoiceSchema).min(2).max(3),
   allows_free_input: z.boolean().default(true),
   free_input_context: z.string().default(""),
+  reward: V1EventRewardSchema.nullable().optional(),
 });
 export type V1Event = z.infer<typeof V1EventSchema>;
 
@@ -64,6 +85,10 @@ export interface V1Input {
   event_type: EventType;
   recent_events: string[];
   available_npcs: Array<{ name: string; role: string }>;
+  available_relic_pool?: string[];
+  character_skills?: string[];
+  character_relics?: string[];
+  world_modifier?: string | null;
 }
 
 // ── V2: Event Free-Input Evaluation ────────────────────────────────────────
@@ -242,7 +267,7 @@ export const E3RivalsSchema = z.object({
 });
 export type E3Rivals = z.infer<typeof E3RivalsSchema>;
 
-export type RivalStrength = "weak" | "moderate" | "strong";
+export type RivalStrength = "moderate" | "strong" | "elite";
 
 export interface E3Input {
   question_text: string;

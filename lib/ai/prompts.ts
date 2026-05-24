@@ -37,6 +37,11 @@ export function buildV1Messages(input: V1Input): ChatMessage[] {
   const npcs =
     input.available_npcs.map((n) => `${n.name}（${n.role}）`).join("、") || "（无）";
   const recent = input.recent_events.length ? input.recent_events.join("、") : "（无）";
+  const relicPool = input.available_relic_pool?.length
+    ? input.available_relic_pool.join("、")
+    : "（无）";
+  const skills = input.character_skills?.length ? input.character_skills.join("、") : "（无）";
+  const relics = input.character_relics?.length ? input.character_relics.join("、") : "（无）";
 
   const system = `You are a narrative event generator for a Chinese historical life simulation game. Output strict json only — no commentary.
 
@@ -48,15 +53,19 @@ CHARACTER STATE:
 - Drive: ${c.drive}/100
 - Titles: ${c.titles.join("、") || "（无）"}
 - Traits: ${c.traits.join("、") || "（无）"}
+- Skills: ${skills}
+- Relics: ${relics}
 
 WORLD STATE:
 - Era: ${w.era}（${ERA_DESCRIPTION[w.era]}）
 - Season: ${SEASON_TEXT[w.season]}
 - Year: ${w.year}
+- World modifier: ${input.world_modifier ?? "（无）"}
 
 EVENT TYPE TO GENERATE: ${input.event_type}（${EVENT_TYPE_TEXT[input.event_type]}）
 RECENT EVENTS (do NOT repeat): ${recent}
 AVAILABLE NPCs: ${npcs}
+AVAILABLE RELIC IDs FOR REWARD: ${relicPool}
 
 RULES:
 1. Generate ONE event matching the requested type, grounded in the character's situation.
@@ -66,17 +75,20 @@ RULES:
 5. The event must NOT instantly kill the character or end the game.
 6. Description: 2-3 vivid sentences. Title: ≤10 Chinese characters.
 7. All player-facing text in Simplified Chinese.
+8. A choice MAY include "check" for a visible dice roll. If present, dc must be 6-16 and outcomes must include crit_success/success/fail/crit_fail stat_changes.
+9. "reward" is optional. Only opportunity/social events may use relic_draft rewards, and relic_ids must come from AVAILABLE RELIC IDs.
 
 OUTPUT FORMAT — respond with strict json in exactly this shape:
 {
   "title": "≤10字标题",
   "description": "2-3句生动描述",
   "choices": [
-    {"id": "a", "label": "≤20字选项", "stat_changes": {"erudition": 0, "fortune": 5, "drive": -5, "wealth": 0}, "narrative_preview": "一句后果提示"},
+    {"id": "a", "label": "≤20字选项", "stat_changes": {"erudition": 0, "fortune": 5, "drive": -5, "wealth": 0}, "narrative_preview": "一句后果提示", "check": null},
     {"id": "b", "label": "...", "stat_changes": {"erudition": 0, "fortune": 0, "drive": 0, "wealth": 0}, "narrative_preview": "..."}
   ],
   "allows_free_input": true,
-  "free_input_context": "什么样的创意解法可能有效"
+  "free_input_context": "什么样的创意解法可能有效",
+  "reward": null
 }`;
 
   const user = `请按上述规则与 json 格式，为「${c.name}」生成一个${SEASON_TEXT[w.season]}的${EVENT_TYPE_TEXT[input.event_type]}事件。`;
@@ -404,9 +416,9 @@ TASK:
 1. Generate exactly 3 rival candidates with distinct answering styles
 2. Each rival writes a brief answer summary (1 sentence describing their approach)
 3. Assign each rival a score based on rival_strength:
-   - weak: scores range 40-65
    - moderate: scores range 55-80
-   - strong: scores range 70-95
+   - strong: scores range 65-90
+   - elite: scores range 75-95
 
 RULES:
 - Rival names must be era-appropriate Chinese full names (surname + given name)

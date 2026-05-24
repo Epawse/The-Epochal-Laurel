@@ -3,10 +3,11 @@
  * Pure functions, no IO, no side effects.
  */
 
-import type { Stats, StatChanges } from "@/lib/game/schema";
+import type { Stats, StatChanges, Modifier, StatKey } from "@/lib/game/schema";
 import type { ActionDef, EventType } from "@/lib/game/constants";
 import { STAT_BOUNDARIES } from "@/lib/game/constants";
 import type { Rng } from "./rng";
+import { activeModifiers, applyActionDeltaModifiers } from "./effects";
 
 // ── Diminishing Returns ────────────────────────────────────────────────────
 
@@ -33,14 +34,15 @@ export function diminishingReturns(
 export function applyActionEffects(
   action: ActionDef,
   stats: Stats,
-  rng: Rng
+  rng: Rng,
+  modifiers: readonly Modifier[] = []
 ): StatChanges {
   const effects = action.effects;
 
-  let erudition = resolveRange(effects.erudition, rng);
-  const fortune = resolveRange(effects.fortune, rng);
-  const drive = resolveRange(effects.drive, rng);
-  const wealth = resolveRange(effects.wealth, rng);
+  let erudition = resolveActionRange(action, "erudition", effects.erudition, rng, modifiers);
+  const fortune = resolveActionRange(action, "fortune", effects.fortune, rng, modifiers);
+  const drive = resolveActionRange(action, "drive", effects.drive, rng, modifiers);
+  const wealth = resolveActionRange(action, "wealth", effects.wealth, rng, modifiers);
 
   // Apply diminishing returns to positive erudition gains (study action above 80)
   if (erudition > 0) {
@@ -58,6 +60,21 @@ function resolveRange(range: readonly [number, number], rng: Rng): number {
   const max = Math.max(a, b);
   if (min === max) return min;
   return rng.nextInt(min, max);
+}
+
+function resolveActionRange(
+  action: ActionDef,
+  stat: StatKey,
+  range: readonly [number, number],
+  rng: Rng,
+  modifiers: readonly Modifier[]
+): number {
+  return applyActionDeltaModifiers(
+    action.id,
+    stat,
+    resolveRange(range, rng),
+    modifiers
+  );
 }
 
 // ── Drive Decay ────────────────────────────────────────────────────────────
@@ -91,23 +108,40 @@ export function eventChancePerSeason(fortune: number): number {
  * Event type distribution based on fortune range.
  * Returns weights: [opportunity, misfortune, social, political]
  */
-export function eventTypeDistribution(fortune: number): Record<EventType, number> {
-  if (fortune < 0) {
-    return { opportunity: 5, misfortune: 40, social: 40, political: 15 };
-  } else if (fortune <= 30) {
-    return { opportunity: 15, misfortune: 25, social: 45, political: 15 };
-  } else if (fortune <= 60) {
-    return { opportunity: 25, misfortune: 15, social: 40, political: 20 };
-  } else {
-    return { opportunity: 35, misfortune: 10, social: 35, political: 20 };
+export function eventTypeDistribution(
+  fortune: number,
+  modifiers: readonly Modifier[] = []
+): Record<EventType, number> {
+  const weights =
+    fortune < 0
+      ? { opportunity: 5, misfortune: 40, social: 40, political: 15 }
+      : fortune <= 30
+        ? { opportunity: 15, misfortune: 25, social: 45, political: 15 }
+        : fortune <= 60
+          ? { opportunity: 25, misfortune: 15, social: 40, political: 20 }
+          : { opportunity: 35, misfortune: 10, social: 35, political: 20 };
+
+  for (const modifier of activeModifiers(modifiers)) {
+    const effect = modifier.effect;
+    if (effect.kind !== "event_bias") continue;
+    weights[effect.event_type] *= effect.weight_mult ?? 1;
+    if (effect.event_type === "misfortune") {
+      weights.misfortune *= effect.danger_mult ?? 1;
+    }
   }
+
+  return weights;
 }
 
 /**
  * Pick an event type using weighted distribution and RNG.
  */
-export function rollEventType(fortune: number, rng: Rng): EventType {
-  const weights = eventTypeDistribution(fortune);
+export function rollEventType(
+  fortune: number,
+  rng: Rng,
+  modifiers: readonly Modifier[] = []
+): EventType {
+  const weights = eventTypeDistribution(fortune, modifiers);
   const total = weights.opportunity + weights.misfortune + weights.social + weights.political;
   const roll = rng.nextFloat(0, total);
 

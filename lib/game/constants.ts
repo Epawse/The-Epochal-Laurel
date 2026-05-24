@@ -15,6 +15,7 @@ export type EmperorTemperament =
   | "lazy"
   | "paranoid"
   | "benevolent";
+export type ActionId = "study" | "socialize" | "earn" | "rest" | "scheme";
 
 // ── Origin Definitions (balance.md) ─────────────────────────────────────────
 
@@ -144,7 +145,7 @@ export const EXAM_REWARDS: Record<ExamLevel, string> = {
 // ── Action Definitions ──────────────────────────────────────────────────────
 
 export interface ActionDef {
-  id: string;
+  id: ActionId;
   label: string;
   labelEn: string;
   effects: {

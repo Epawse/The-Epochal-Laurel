@@ -96,6 +96,14 @@ export function EventModal({
             {event.description}
           </p>
 
+          {event.reward && (
+            <div className="mb-6 border border-dashed border-hairline px-3 py-2 font-serif text-sm text-gold tracking-[0.08em]">
+              {event.reward.type === "relic_draft" && "此事或可得一件奇物"}
+              {event.reward.type === "skill_grant" && "此事或可悟得一门技艺"}
+              {event.reward.type === "buff" && "此事或将留下余韵"}
+            </div>
+          )}
+
           {/* Choices grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
             {event.choices.map((choice, index) => (

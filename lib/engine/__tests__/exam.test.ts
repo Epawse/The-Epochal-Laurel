@@ -8,7 +8,24 @@ import {
   courtWhimsAlignment,
   evaluateRiskCondition,
   palaceRanking,
+  rollExamPerformance,
 } from "../exam";
+import type { Rng } from "../rng";
+
+function fixedRng(...values: number[]): Rng {
+  let index = 0;
+  return {
+    next: () => 0,
+    nextFloat: (min: number) => min,
+    nextInt: () => {
+      const value = values[index];
+      index += 1;
+      if (value === undefined) throw new Error("fixedRng exhausted");
+      return value;
+    },
+    state: () => [0, 0, 0, 1],
+  };
+}
 
 describe("exam", () => {
   describe("examThreshold", () => {
@@ -43,55 +60,109 @@ describe("exam", () => {
 
   describe("scoreFixedChoice", () => {
     it("calculates score with all components", () => {
-      // raw = 50 + 60*0.3 + 20 = 50 + 18 + 20 = 88
-      const result = scoreFixedChoice(50, 60, 20);
-      expect(result).toBe(88);
+      // raw = 50*0.4 + 60*0.4 + full county alignment 16 = 60
+      const result = scoreFixedChoice(50, 60, "full", "county");
+      expect(result).toBe(60);
     });
 
     it("clamps score to 100", () => {
-      // raw = 70 + 100*0.3 + 20 = 70 + 30 + 20 = 120 -> clamped to 100
-      const result = scoreFixedChoice(70, 100, 20);
+      const result = scoreFixedChoice(70, 100, "full", "county", [], { variance: 50 });
       expect(result).toBe(100);
     });
 
     it("clamps score to 0 minimum", () => {
-      const result = scoreFixedChoice(0, 0, 0);
+      const result = scoreFixedChoice(0, 0, "none", "county", [], { variance: -50 });
       expect(result).toBe(0);
     });
 
-    it("handles no court whims bonus", () => {
-      // raw = 40 + 50*0.3 + 0 = 40 + 15 = 55
-      const result = scoreFixedChoice(40, 50, 0);
+    it("handles no alignment bonus", () => {
+      // raw = 40*0.4 + 50*0.4 = 36
+      const result = scoreFixedChoice(40, 50, "none", "county");
+      expect(result).toBe(36);
+    });
+
+    it("caps misaligned metropolitan answers below the pass threshold", () => {
+      const result = scoreFixedChoice(70, 100, "none", "metropolitan", [], { variance: 20 });
       expect(result).toBe(55);
+    });
+
+    it("lets exam_alignment_relax bypass the high-level alignment gate", () => {
+      const result = scoreFixedChoice(
+        70,
+        100,
+        "none",
+        "metropolitan",
+        [
+          {
+            id: "relax",
+            source: { type: "relic", id: "whispered_genealogy" },
+            label: "秘抄谱牒",
+            effect: { kind: "exam_alignment_relax", levels: ["metropolitan"] },
+            turns_remaining: null,
+          },
+        ],
+        { variance: 20 }
+      );
+      expect(result).toBe(88);
     });
   });
 
   describe("scoreFreeText", () => {
     it("calculates score from judge score and erudition", () => {
-      // raw = 80*0.7 + 60*0.3 = 56 + 18 = 74
-      const result = scoreFreeText(80, 60);
-      expect(result).toBe(74);
+      // raw = 80*0.55 + 60*0.4 = 68
+      const result = scoreFreeText(80, 60, "county");
+      expect(result).toBe(68);
     });
 
     it("clamps to 100", () => {
-      // raw = 100*0.7 + 100*0.3 = 70 + 30 = 100
-      const result = scoreFreeText(100, 100);
+      const result = scoreFreeText(100, 100, "county", [], { variance: 20 });
       expect(result).toBe(100);
     });
 
-    it("perfect judge score reaches same ceiling as best fixed choice", () => {
-      // judge 100 -> 100*0.7 = 70 (answer component)
-      // This matches the strongest fixed choice base value of 70
-      const result = scoreFreeText(100, 0);
-      expect(result).toBe(70);
+    it("weights judge score below the old answer-component ceiling", () => {
+      const result = scoreFreeText(100, 0, "county");
+      expect(result).toBe(55);
+    });
+
+    it("caps high-level free-text answers with poor judge alignment", () => {
+      const result = scoreFreeText(100, 100, "metropolitan", [], {
+        judgeAlignmentScore: 5,
+        variance: 20,
+      });
+      expect(result).toBe(55);
     });
   });
 
   describe("cheatSheetBonus", () => {
-    it("returns erudition * 0.6", () => {
-      expect(cheatSheetBonus(50)).toBe(30);
-      expect(cheatSheetBonus(100)).toBe(60);
+    it("returns erudition * 0.8 under the new scoring weights", () => {
+      expect(cheatSheetBonus(50)).toBe(40);
+      expect(cheatSheetBonus(100)).toBe(80);
       expect(cheatSheetBonus(0)).toBe(0);
+    });
+  });
+
+  describe("rollExamPerformance", () => {
+    it("returns positive variance for strong performance", () => {
+      const result = rollExamPerformance(
+        { erudition: 80, fortune: 40, drive: 80, wealth: 20 },
+        [],
+        fixedRng(12)
+      );
+
+      expect(result.total).toBe(18);
+      expect(result.variance).toBe(6);
+      expect(result.label).toBe("发挥良好");
+    });
+
+    it("returns critical failure variance on natural 1", () => {
+      const result = rollExamPerformance(
+        { erudition: 100, fortune: 100, drive: 80, wealth: 20 },
+        [],
+        fixedRng(1)
+      );
+
+      expect(result.variance).toBe(-15);
+      expect(result.label).toBe("严重失常");
     });
   });
 

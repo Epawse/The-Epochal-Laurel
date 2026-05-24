@@ -48,7 +48,7 @@ export async function generatePalaceRivals(input: E3Input): Promise<E3Rivals> {
       contract: "E3",
       reason: err instanceof Error ? err.message : String(err),
     });
-    return proceduralRivals(input.rival_strength);
+    return proceduralRivals(input.rival_strength, input.dynasty_generation);
   }
 }
 
@@ -80,15 +80,13 @@ const FALLBACK_SUMMARIES = [
   "极力颂扬圣上英明，主张一切听从天子裁决",
 ];
 
-function proceduralRivals(strength: RivalStrength): E3Rivals {
+function proceduralRivals(strength: RivalStrength, generation: number = 1): E3Rivals {
   const range = STRENGTH_RANGES[strength];
-  // Pick a name set based on current time for variety
-  const nameSet = FALLBACK_NAMES[Date.now() % FALLBACK_NAMES.length];
+  const nameSet = FALLBACK_NAMES[generation % FALLBACK_NAMES.length];
 
   const rivals = nameSet.map((name, i) => {
-    // Jitter ±5 around midpoint
-    const jitter = Math.round((Math.random() - 0.5) * 10);
-    const score = Math.max(range.min, Math.min(range.max, range.mid + jitter));
+    const offset = [-3, 0, 3][i];
+    const score = Math.max(range.min, Math.min(range.max, range.mid + offset));
 
     return {
       name,

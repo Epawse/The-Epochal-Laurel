@@ -9,7 +9,7 @@ import { NarrativeStrip } from "@/components/game/NarrativeStrip";
 import { CourtHint } from "@/components/game/CourtHint";
 import { EventModal } from "@/components/game/EventModal";
 import { SchemeExposureOverlay } from "@/components/game/SchemeExposureOverlay";
-import { ACTIONS, highestTitleOf } from "@/lib/game/constants";
+import { ACTIONS, highestTitleOf, EXAM_REQUIREMENTS, type ExamLevel } from "@/lib/game/constants";
 import type { GameState, StatChanges } from "@/lib/game/schema";
 import { advanceTurn, submitEventChoice, submitEventFreeInput, generateHeirsAction } from "@/lib/actions/game";
 import { recordScore } from "@/lib/actions/leaderboard";
@@ -45,21 +45,43 @@ function getPortraitSrc(age: number): string {
   return "/assets/scholar-young.png";
 }
 
-function getNextExamCountdown(examSchedule: {
-  next_county: number;
-  next_provincial: number;
-  next_metropolitan: number;
-}): { label: string; seasons: number } {
-  const entries: { label: string; seasons: number }[] = [
-    { label: "童试", seasons: examSchedule.next_county },
-    { label: "乡试", seasons: examSchedule.next_provincial },
-    { label: "会试", seasons: examSchedule.next_metropolitan },
+interface ExamStatus {
+  label: string;
+  seasons: number;
+  locked: boolean;
+  lockReason: string | null;
+}
+
+function getExamStatus(
+  examSchedule: { next_county: number; next_provincial: number; next_metropolitan: number },
+  titles: string[],
+  erudition: number,
+  statusEffects: Array<{ type: string; turns_remaining: number }>
+): ExamStatus {
+  const levels: Array<{ level: ExamLevel; label: string; seasons: number }> = [
+    { level: "county", label: "童试", seasons: examSchedule.next_county },
+    { level: "provincial", label: "乡试", seasons: examSchedule.next_provincial },
+    { level: "metropolitan", label: "会试", seasons: examSchedule.next_metropolitan },
   ];
-  // Return the nearest upcoming exam
-  const upcoming = entries
-    .filter((e) => e.seasons > 0)
-    .sort((a, b) => a.seasons - b.seasons);
-  return upcoming[0] ?? { label: "无", seasons: 0 };
+
+  // Find the highest exam level the player qualifies for by title progression
+  let target = levels[0];
+  if (titles.includes("举人")) target = levels[2];
+  else if (titles.includes("秀才")) target = levels[1];
+
+  // Check for exam ban
+  const banned = statusEffects.some((e) => e.type === "exam_ban");
+  if (banned) {
+    return { label: target.label, seasons: target.seasons, locked: true, lockReason: "禁考中" };
+  }
+
+  // Check erudition requirement
+  const req = EXAM_REQUIREMENTS[target.level];
+  if (erudition < req.min_erudition) {
+    return { label: target.label, seasons: target.seasons, locked: true, lockReason: `学识不足 (需${req.min_erudition})` };
+  }
+
+  return { label: target.label, seasons: target.seasons, locked: false, lockReason: null };
 }
 
 export default function PlayPage() {
@@ -107,7 +129,7 @@ export default function PlayPage() {
   const highestTitle = highestTitleOf(character.titles);
   const portraitSrc = getPortraitSrc(character.age);
   const isDanger = character.stats.drive <= 25;
-  const nextExam = getNextExamCountdown(world.exam_schedule);
+  const nextExam = getExamStatus(world.exam_schedule, character.titles, character.stats.erudition, character.status_effects);
   const isInvasion = world.era === "invasion";
   const hasEvent = gameState.current_event !== null;
 
@@ -309,12 +331,12 @@ export default function PlayPage() {
                 {nextExam.label}
               </span>
               <span className="font-mono text-xs text-gold-dim tracking-[0.06em]">
-                {nextExam.seasons > 0 ? `${nextExam.seasons}季后` : "已开放"}
+                {nextExam.locked ? nextExam.lockReason : nextExam.seasons > 0 ? `${nextExam.seasons}季后` : "已开放"}
               </span>
             </div>
             <button
               type="button"
-              disabled={nextExam.seasons > 0 || hasEvent}
+              disabled={nextExam.seasons > 0 || nextExam.locked || hasEvent}
               onClick={() => router.push("/play/exam")}
               className="mt-3 w-full px-4 py-2.5 bg-gradient-to-b from-vermillion to-vermillion-deep text-bone border border-vermillion-deep font-serif text-sm tracking-[0.22em] transition-all duration-200 disabled:bg-paper-2 disabled:border-hairline disabled:text-bone-mute disabled:cursor-not-allowed disabled:bg-none"
               aria-label="参加考试"

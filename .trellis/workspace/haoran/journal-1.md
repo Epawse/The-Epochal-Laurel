@@ -438,3 +438,36 @@ Implemented the roguelike overhaul: typed effects/modifiers, relic drafts/shop/h
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 考试链路 AI 可靠性与延迟修复 (06-04-ai)
+
+**Date**: 2026-06-04
+**Task**: 考试链路 AI 可靠性与延迟修复 (06-04-ai)
+**Branch**: `feat/random-event-zero-wait`
+
+### Summary
+
+诊断 zero-wait 体感落差后聚焦考试链路四问题：#1 防 StrictMode 重复出题(ref once-guard)、#2 E2 评卷改 Gemini 优先 reasoningEffort:low 不再截断降级、#3 交卷 18.7s→8.3s、#4 E1 Gemini 优先 reasoningEffort:minimal 出题 20.6s→5.2s。引入 per-contract reasoningEffort+providerOrder 机制(仅 E1/E2,其余6契约不变),三轮浏览器实测验证,224 测试绿。下一步:A/B 叙事记录区。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bf2e24b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

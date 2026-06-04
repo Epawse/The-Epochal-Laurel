@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 13
-- **Last Active**: 2026-05-24
+- **Total Sessions**: 14
+- **Last Active**: 2026-06-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~440 | Active |
+| `journal-1.md` | ~473 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 14 | 2026-06-04 | 考试链路 AI 可靠性与延迟修复 (06-04-ai) | `bf2e24b` | `feat/random-event-zero-wait` |
 | 13 | 2026-05-24 | Roguelike depth and exam difficulty overhaul | `c48063e`, `5276c23`, `e1b8b9f` | `codex/roguelike-depth-and-exam-difficulty-overhaul` |
 | 12 | 2026-05-24 | Fix Supabase save creation and mobile layouts | `30f4027`, `b9f824e`, `c857984` | `fix/save-create-supabase-mobile` |
 | 11 | 2026-05-24 | Task 10: Animation + Responsive + Edge Cases | `20862f0` | `main` |

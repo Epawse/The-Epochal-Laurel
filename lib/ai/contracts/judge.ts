@@ -18,14 +18,20 @@ export async function evaluateFreeText(input: E2Input): Promise<E2Judge> {
     const result = await callLLM("high", buildE2Messages(input), {
       contract: "E2",
       temperature: 0.3,
-      maxTokens: 800,
-      timeoutMs: 10_000,
+      // Gemini reasoning shares the max_tokens budget with the visible JSON
+      // ("output budget cannibalization"); low effort + a roomy budget keeps the
+      // ~300-token judge JSON from truncating (see research/gemini-3.5-flash-thinking.md).
+      maxTokens: 2048,
+      timeoutMs: 12_000,
       softBudgetMs: 5000,
-      // E2 uses thinking mode — JSON extraction from content post-process.
-      // DeepSeek V4 thinking mode can interfere with json_object mode,
-      // so we use text format and extract JSON manually.
+      // E2 prefers Gemini 3.5 Flash's light "low" thinking tier: it reasons a bit yet
+      // emits content fast and intact. The same effort maps to thinking-disabled on the
+      // DeepSeek fallback (v4 has no graduated tier), dodging the old 10s thinking-mode
+      // timeout. Still text + extractJsonObject since reasoning models can prepend stray
+      // content. (Temperature 0.3 is now effective — it was a no-op under DeepSeek thinking.)
       responseFormat: "text",
-      thinking: true,
+      reasoningEffort: "low",
+      providerOrder: ["gemini", "deepseek"],
     });
     const jsonStr = extractJsonObject(result.content);
     const parsed = JSON.parse(jsonStr);

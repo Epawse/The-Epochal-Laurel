@@ -11,9 +11,11 @@ import {
   getClient,
   isConfigured,
   thinkingParams,
+  reasoningEffortParams,
   AllProvidersFailedError,
   type ProviderId,
   type Tier,
+  type ReasoningEffort,
   type ChatMessage,
   type ProviderExtraBody,
 } from "./providers";
@@ -22,12 +24,14 @@ import { log } from "../log";
 export type { ChatMessage } from "./providers";
 
 export interface CallOptions {
-  thinking?: boolean; // default false (Low/Mid). High + thinking is E2 only.
+  thinking?: boolean; // default false (Low/Mid). Legacy on/off; prefer reasoningEffort.
+  reasoningEffort?: ReasoningEffort; // graduated effort; overrides `thinking` when set (E2)
   temperature?: number; // default 0.7
   maxTokens?: number; // default 800
   timeoutMs?: number; // hard abort; default 10_000 (ai-contracts global limit)
   softBudgetMs?: number; // log a slow-call warn above this (telemetry only)
   responseFormat?: "json" | "text"; // default "json"
+  providerOrder?: ProviderId[]; // override the global PROVIDER_CHAIN for this call (E2 → gemini first)
   contract?: string; // telemetry label, e.g. "V1"
 }
 
@@ -93,7 +97,10 @@ async function attempt(
   opts: CallOptions,
 ) {
   const client = getClient(provider);
-  const extra: ProviderExtraBody = thinkingParams(provider, opts.thinking ?? false);
+  // Graduated reasoningEffort (E2) overrides the thinking:boolean default.
+  const extra: ProviderExtraBody = opts.reasoningEffort
+    ? reasoningEffortParams(provider, opts.reasoningEffort)
+    : thinkingParams(provider, opts.thinking ?? false);
   const params = {
     model,
     messages: formatMessages(provider, messages),
@@ -118,7 +125,7 @@ export async function callLLM(
   messages: ChatMessage[],
   options: CallOptions = {},
 ): Promise<LLMResult> {
-  const chain = PROVIDER_CHAIN.filter(isConfigured);
+  const chain = (options.providerOrder ?? PROVIDER_CHAIN).filter(isConfigured);
   if (chain.length === 0) {
     throw new AllProvidersFailedError([{ provider: "(none)", error: "no provider configured" }]);
   }

@@ -9,13 +9,21 @@ import OpenAI from "openai";
 export type Tier = "low" | "mid" | "high";
 export type ProviderId = "deepseek" | "gemini";
 
+/**
+ * Graduated reasoning effort — a per-contract override of the thinking:boolean
+ * default. Gemini maps it straight to `reasoning_effort`; DeepSeek V4 has no
+ * graduated tier (only enabled/disabled), so minimal/low → disabled, medium/high
+ * → enabled. See research/gemini-3.5-flash-thinking.md + research/deepseek-v4-thinking.md.
+ */
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
+
 /** A chat turn. Kept here (lowest-level module) so client + prompts share it. */
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 /** Provider-specific body fields the OpenAI types don't model. */
 export interface ProviderExtraBody {
   thinking?: { type: "enabled" | "disabled" };
-  reasoning_effort?: "none" | "low" | "medium" | "high";
+  reasoning_effort?: "none" | "minimal" | "low" | "medium" | "high";
 }
 
 interface ProviderConfig {
@@ -120,4 +128,25 @@ export function thinkingParams(id: ProviderId, thinking: boolean): ProviderExtra
     return { thinking: { type: thinking ? "enabled" : "disabled" } };
   }
   return thinking ? { reasoning_effort: "medium" } : { reasoning_effort: "none" };
+}
+
+/**
+ * Translate a graduated ReasoningEffort into per-provider params. Used when a
+ * contract opts into explicit effort control (E2 today) instead of the
+ * thinking:boolean default.
+ *
+ * - Gemini: maps straight to `reasoning_effort`. Gemini 3.x can't fully disable
+ *   thinking; `minimal` is closest to off + fastest. A light tier like `low`
+ *   keeps reasoning cheap so it does NOT cannibalise the max_tokens budget and
+ *   truncate the JSON (see research/gemini-3.5-flash-thinking.md).
+ * - DeepSeek V4: no graduated tier — only enabled/disabled. minimal/low → disabled
+ *   (fast, dodges the thinking-mode timeouts); medium/high → enabled. DeepSeek keeps
+ *   clean JSON in `content` either way (reasoning goes to `reasoning_content`).
+ */
+export function reasoningEffortParams(id: ProviderId, effort: ReasoningEffort): ProviderExtraBody {
+  if (id === "deepseek") {
+    const enabled = effort === "medium" || effort === "high";
+    return { thinking: { type: enabled ? "enabled" : "disabled" } };
+  }
+  return { reasoning_effort: effort };
 }

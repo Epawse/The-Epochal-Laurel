@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/game-design/ai-contracts.md", "reason": "验收 E2 的 provider 顺序/reasoning_effort 档位/max_tokens 与 E1 timeout 是否符合契约"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "验收 E2 降级路径仍 degrades-never-throws，未破坏 own-fallback 契约"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "验收 ai.call/ai.fallback 遥测：无 E2 fallback、outputTokens 完整、单次 E1 调用"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "验收 #1 fetch-once guard 正确（无重复 getExamQuestion），符合 hook 规范"}
+{"file": ".trellis/tasks/06-04-ai/research/gemini-3.5-flash-thinking.md", "reason": "核对 E2 Gemini 配置（low+2048）与调研结论一致、不截断"}
+{"file": ".trellis/tasks/06-04-ai/research/deepseek-v4-thinking.md", "reason": "核对 E2 DeepSeek 兜底配置（关 thinking）与调研一致"}

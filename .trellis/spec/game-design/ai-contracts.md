@@ -31,11 +31,11 @@ The game uses three abstract tiers. The concrete provider/model is configured in
 |------|--------------|----------|----------|----------|
 | Low | `deepseek-v4-flash` | off | Fast generation: events, NPC dialogue, narration | `gemini-3.5-flash` |
 | Mid | `deepseek-v4-pro` | off | Structured generation: exam questions, evaluations, heirs | `gemini-3.5-flash` |
-| High | `deepseek-v4-pro` | on (E2 only) | Critical evaluation requiring reasoning depth | `gemini-3.5-flash` |
+| High | `deepseek-v4-pro` | E2 light-thinks on its Gemini-first primary (`reasoningEffort: "low"`); the DeepSeek fallback runs thinking off | Critical evaluation requiring reasoning depth | `gemini-3.5-flash` |
 
 **Switching providers**: change `lib/ai/providers.ts`. All providers expose OpenAI-compatible endpoints — the `openai` npm package with `baseURL` swap handles the wire protocol. Contracts call a unified `callLLM()` wrapper regardless of which provider backs the tier. Environment variables (`DEEPSEEK_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`) select credentials.
 
-**E2 thinking mode caveat**: DeepSeek V4's thinking mode can interfere with JSON output. For E2 (Judge), enable thinking mode but instruct the model to output JSON after its reasoning, then post-process to extract and Zod-parse the JSON from the response content. All other contracts use non-thinking mode + `response_format: { type: "json_object" }` for reliable structured output, with Zod validation + retry on parse failure.
+**E2 reasoning caveat**: Reasoning models can prepend stray content before the JSON, so E2 (Judge) uses `responseFormat: "text"` and post-processes the content with `extractJsonObject()` + Zod-parse rather than relying on `json_object` mode. E2 is Gemini-first with a light `reasoningEffort: "low"` (fast, keeps the judge JSON intact — see E2 Model Selection); the DeepSeek fallback maps `"low"` to thinking-disabled (V4 has no graduated tier), which both dodges the old thinking-mode timeout and keeps clean JSON in `content`. All other contracts use non-thinking mode + `response_format: { type: "json_object" }` for reliable structured output, with Zod validation + retry on parse failure.
 
 **Known issue**: DeepSeek has quirks with system prompt handling (observed in pcg_contest_10 project). If system prompts cause unexpected behavior, merge system instructions into the first user message as a workaround. This is handled inside `lib/ai/client.ts` per-provider.
 
@@ -126,6 +126,19 @@ Generate a contextually appropriate exam question based on era, court whims, and
 - MUST NOT repeat questions from `previous_questions_this_run`
 - Language: Classical Chinese style but readable to modern Chinese speakers
 
+### Model Selection
+Mid tier, but **Gemini-first** (provider order `["gemini", "deepseek"]`) with
+`reasoningEffort: "minimal"` and `timeoutMs: 10_000`. Rationale: `deepseek-v4-pro`
+exam-question latency swings wildly (9.4s in one probe, >15s in another — a 15s
+timeout still fell back to Gemini at ~20s total), whereas `gemini-3.5-flash`
+generates questions reliably in ~5.5s. `minimal` is Gemini 3.x's fastest
+near-no-thinking tier (Gemini 3.x can't accept `reasoning_effort:"none"`); on the
+DeepSeek fallback `minimal` maps to thinking-disabled, matching the old
+`thinking:false`. The per-call `providerOrder` + graduated `reasoningEffort` live
+in `lib/ai/client.ts` + `lib/ai/providers.ts` (same mechanism as E2). Like E2 this
+is a per-contract opt-in — only E1+E2 (the two high-latency contracts) are
+Gemini-first; the other contracts keep the default `[deepseek, gemini]` chain.
+
 ### Fallback
 If AI call fails: use a pre-written question from a static pool (10 questions per era/level combination).
 
@@ -182,7 +195,18 @@ Evaluate a player's free-text exam answer against the question context. This is 
 - If `player_answer` is empty/gibberish/off-topic: total_score ≤ 10
 
 ### Model Selection
-Use the **High** tier with thinking mode enabled. Accuracy here directly impacts player experience. Temperature: 0.3 (low variance for fairness). Because thinking + JSON can be unreliable on DeepSeek V4, E2 enables thinking but extracts JSON from the response content via post-processing + Zod-parse (see Model Tier Mapping caveat above).
+E2 prefers **Gemini 3.5 Flash with `reasoningEffort: "low"`** (provider order
+`["gemini", "deepseek"]`) — a light, fast thinking tier that still reasons yet keeps
+the ~300-token judge JSON intact. The same `reasoningEffort: "low"` maps to
+thinking-**disabled** on the DeepSeek fallback (`deepseek-v4-pro`; V4 has no graduated
+tier, only on/off), which dodges the old thinking-mode 10s timeout. `maxTokens: 2048`
+(Gemini reasoning shares the visible-output budget — too small a budget truncates the
+JSON), `timeoutMs: 12_000`, temperature 0.3 (now effective — it was a silent no-op
+under DeepSeek thinking). Still text format + `extractJsonObject` + Zod-parse because
+reasoning models can prepend stray content before the JSON. Provider-capability
+research + rationale: `.trellis/tasks/06-04-ai/` (research/gemini-3.5-flash-thinking.md,
+research/deepseek-v4-thinking.md). The `reasoningEffort` graduated override and
+per-call `providerOrder` live in `lib/ai/client.ts` + `lib/ai/providers.ts`.
 
 ### Fallback
 If AI call fails: score = character_erudition * 0.5 (safe middle ground).
@@ -525,22 +549,48 @@ though the soft budget remains 1.5s for telemetry. The daily-life loop therefore
 MUST keep V1 off the `advanceTurn` critical path:
 
 1. `advanceTurn(saveId, actionId)` returns the deterministic engine result first.
-   If the engine rolled an event, it sets `state.pending_event_type` and leaves
-   `state.current_event = null`.
+   If the engine rolled an event, it sets both `state.pending_event_type` and
+   `state.pending_event_action_id`, then leaves `state.current_event = null`.
 2. `generateEventForTurn(saveId)` is the only action that turns
-   `pending_event_type` into `current_event`. It serves from `event_cache[type]`
-   when the stamped `season` + `era` match the now-current state; otherwise it
-   live-generates via V1 as a fallback, then clears the marker.
-3. `prefetchEvents(saveId)` warms all 4 event types during player think-time,
-   using `nextSeason(currentSeason)` as the V1 input season. It MUST reload the
-   save before persisting and only merge cache entries into a still-idle state
-   (same turn/season/era, no current/pending event, no pending relic draft) so a
-   slow prefetch response cannot overwrite a newer turn/event save.
-4. V1 parse/Zod failure retries once with a fresh model call before static
+   `pending_event_type` into `current_event`. It serves from
+   `event_cache[actionId]` only when the cached `action_id`, `event_type`,
+   `turn_number`, `season`, and `era` match the now-current pending marker;
+   otherwise it live-generates via V1 as a fallback, then clears both pending
+   markers.
+3. `prefetchEvents(saveId)` performs action-aware lookahead during player
+   think-time. It simulates each currently available daily action with
+   `advanceSeason(currentState, action.id, createRng(currentState.rng_seed))`,
+   generates V1 content only for simulated actions that actually trigger an
+   event, and caches those events by action id with the simulated post-action
+   turn/season/era. Each action's generated result SHOULD be persisted as soon as
+   that action finishes rather than waiting for the slowest lookahead in the
+   batch. It MUST reload the save before each persist and only merge cache entries
+   into a still-idle state (same turn/season/era, no current/pending event, no
+   pending relic draft) so a slow lookahead response cannot overwrite a newer
+   turn/event save.
+4. `generateEventForTurn(saveId)` SHOULD de-duplicate with in-flight lookahead
+   work for the same `saveId + pending_event_action_id`. If the matching
+   prefetch promise is already running, it may wait briefly for that result and
+   consume it directly when the generated action/type/turn/season/era matches the
+   current pending marker, even if the idle-state guard prevented the prefetch
+   from writing to `event_cache`. The wait window should cover the observed raw
+   low-tier V1 latency (currently about 4-8s in local probes) so an almost-finished
+   background call is not duplicated. If the wait times out or the stamp does not
+   match, live-generate via V1 as the fallback.
+5. V1 parse/Zod failure retries once with a fresh model call before static
    fallback. The schema enforces per-delta caps at the contract layer:
    V1 choice `stat_changes` and all `check.outcomes` entries are ±15; V2
    `eventEval.stat_changes` is ±20. The shared base `StatChangesSchema` remains
    unbounded because engine and exam paths have different contracts.
+6. V1 `check` is optional at the choice boundary. If the model emits an empty or
+   structurally incomplete `check` object (for example `stat` + `dc` without the
+   four outcome tables), parse it as `check: null` and keep the rest of the
+   AI-authored event. If a check is structurally complete, all normal validation
+   still applies; invalid `stat`, `dc`, or out-of-range outcome deltas still fail
+   the V1 parse and trigger the retry/fallback path.
+7. V1 `free_input_context` is optional display guidance. If the model emits
+   `null`, coerce it to an empty string instead of failing the event, because a
+   missing free-input hint should not discard otherwise valid AI-authored content.
 
 The V1 output schema gains two optional fields:
 
@@ -632,6 +682,10 @@ N1 dialogue during `socialize` is also off the `advanceTurn` critical path:
   memory, clears the marker, persists, and returns the generated line.
 - Stale markers are discarded when the NPC is missing/dead or the marker's
   `turn_number` no longer matches `state.turn_number`.
+- Because the frontend may allow normal play while N1 is still running,
+  `generateNpcDialogueForTurn` MUST re-read the save after the AI call and persist
+  only if the pending marker still exactly matches. A stale N1 result is discarded
+  rather than writing an older turn over newer player progress.
 - N1 fallback remains owned by `lib/ai/contracts/npcDialogue.ts`; action callers
   should not surface AI failures as turn failures.
 
@@ -643,11 +697,14 @@ N1 dialogue during `socialize` is also off the `advanceTurn` critical path:
 2. **Max tokens**: 500 per call (most outputs are short)
 3. **Timeout**: 10 seconds hard limit, fallback triggers at timeout
 4. **Rate limiting**: Max 5 synchronous AI calls per player action. Background
-   V1 prefetch deliberately adds up to 4 low-tier calls per idle turn outside
-   the critical path; this is an accepted demo-cost tradeoff to make triggered
-   events feel instant. Breakdown:
+   V1 lookahead deliberately adds up to one low-tier call per currently available
+   daily action whose simulated result would trigger an event; these calls happen
+   outside the critical path. This is the accepted tradeoff for high AI
+   participation with imperceptible player waits, without blindly generating
+   unusable event types. Breakdown:
    - Normal season (no event): 0 synchronous calls; optional deferred N1 after
-     socialize; up to 4 background V1 prefetch calls during player think-time
+     socialize; background V1 lookahead calls only for simulated actions that
+     would trigger an event during player think-time
    - Season with event: 0 synchronous V1 calls on cache hit; live V1 only on
      cache miss/stale marker, plus optional deferred N1 and optional V2
    - Exam turn: E1 + (E2 only if free-text) + R1 = 2-3 calls (fixed-choice answers are scored by formula, no E2)

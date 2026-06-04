@@ -6,8 +6,8 @@
 import { readFileSync } from "node:fs";
 import { callLLM } from "../lib/ai/client";
 import { generateEvent } from "../lib/ai/contracts/event";
-import { V1EventSchema, extractJsonObject, type V1Input } from "../lib/ai/schema";
-import { buildV1Messages } from "../lib/ai/prompts";
+import { V1EventSchema, E2JudgeSchema, extractJsonObject, type V1Input, type E2Input } from "../lib/ai/schema";
+import { buildV1Messages, buildE2Messages } from "../lib/ai/prompts";
 import { isConfigured, _resetClientCache } from "../lib/ai/providers";
 
 function loadEnv(file: string): void {
@@ -107,6 +107,40 @@ async function main(): Promise<void> {
       `\n[3] timeout test (timeoutMs=1): aborted after ≈${Date.now() - t3}ms as expected → ${(err as Error).name}`,
     );
   }
+
+  // [4] E2 judge: prove Gemini-first low-effort thinking returns INTACT judge JSON.
+  // The old reasoning_effort:medium + maxTokens:800 truncated content to ~31 tokens
+  // and forced the erudition*0.5 fallback (see task 06-04-ai).
+  const t4 = Date.now();
+  const e2Input: E2Input = {
+    question_text: "论民为邦本之道",
+    player_answer: "为政者当体恤民情，轻徭薄赋，使耕者有其田，仓廪实而知礼节，则邦本自固。",
+    court_whims: { style: "pragmatic", emperor_temperament: "benevolent" },
+    exam_level: "county",
+    character_erudition: 50,
+    character_items: [],
+  };
+  const e2res = await callLLM("high", buildE2Messages(e2Input), {
+    contract: "E2-probe",
+    temperature: 0.3,
+    maxTokens: 2048,
+    timeoutMs: 12_000,
+    responseFormat: "text",
+    reasoningEffort: "low",
+    providerOrder: ["gemini", "deepseek"],
+  });
+  let e2Valid = false;
+  try {
+    E2JudgeSchema.parse(JSON.parse(extractJsonObject(e2res.content)));
+    e2Valid = true;
+  } catch (e) {
+    console.log("    [4] E2 JSON failed Zod:", (e as Error).message.slice(0, 160));
+  }
+  console.log(
+    `\n[4] E2 judge probe: provider=${e2res.provider} reasoningEffort=low ` +
+      `zodValid=${e2Valid} contentLen=${e2res.content.length} ` +
+      `latency≈${e2res.latencyMs}ms wall≈${Date.now() - t4}ms`,
+  );
 
   console.log("\nDONE");
 }

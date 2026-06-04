@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ScrollFramePanel } from "@/components/ui/ScrollFramePanel";
 import { ExamChoice } from "@/components/game/ExamChoice";
@@ -32,6 +32,8 @@ export default function ExamPage() {
   const [insiderTipChoice, setInsiderTipChoice] = useState<string | null>(null);
   const [toolMessage, setToolMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Guards getExamQuestion against React StrictMode's dev double-invoke (see effect below).
+  const requestedExamKeyRef = useRef<string | null>(null);
 
   // Hydrate from the persisted save once + derive the exam level (render-time sync).
   if (!synced && persisted !== null) {
@@ -59,19 +61,26 @@ export default function ExamPage() {
     }
   }, [router]);
 
-  // Fetch the exam question once, after state is hydrated.
+  // Fetch the exam question once per (saveId, examLevel). A ref-keyed guard fires
+  // the getExamQuestion server action exactly once even under React StrictMode's
+  // dev mount→cleanup→remount. The previous `cancelled` flag only blocked setState,
+  // NOT the already-dispatched call — so the pro model was double-billed and the two
+  // responses (one DeepSeek, one Gemini) could desync the displayed vs graded
+  // question. On failure the key resets so a later render can retry.
   useEffect(() => {
-    if (!gameState || question !== null) return;
-    let cancelled = false;
-    getExamQuestion(saveId!, examLevel).then((q) => {
-      if (!cancelled) {
+    if (!gameState || question !== null || saveId === null) return;
+    const key = `${saveId}:${examLevel}`;
+    if (requestedExamKeyRef.current === key) return;
+    requestedExamKeyRef.current = key;
+    getExamQuestion(saveId, examLevel)
+      .then((q) => {
         setQuestion(q);
         setIsLoading(false);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
+      })
+      .catch((e) => {
+        console.warn("Failed to fetch exam question:", e);
+        requestedExamKeyRef.current = null;
+      });
   }, [gameState, examLevel, question, saveId]);
 
   function handleSubmit() {

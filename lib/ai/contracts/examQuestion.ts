@@ -1,5 +1,5 @@
 // E1 — Exam Question Generation (game-design/ai-contracts.md).
-// Model tier: Mid (deepseek-v4-pro). Temperature: 0.7.
+// Model tier: Mid, Gemini-first (gemini-3.5-flash). Temperature: 0.7.
 // Fallback: static question pool per era/level.
 
 import { callLLM } from "../client";
@@ -21,7 +21,15 @@ export async function generateExamQuestion(input: E1Input): Promise<E1ExamQuesti
       timeoutMs: 10_000,
       softBudgetMs: 3000,
       responseFormat: "json",
-      thinking: false,
+      // Gemini-first like E2: deepseek-v4-pro exam-question latency swings wildly
+      // (9.4s once, >15s another — even a 15s timeout fell back to Gemini at ~20s
+      // total), while gemini-3.5-flash generates questions reliably in ~5.5s.
+      // reasoningEffort:"minimal" = Gemini's fastest near-no-thinking tier (Gemini 3.x
+      // can't take reasoning_effort:"none", which is what thinking:false mapped to);
+      // on the DeepSeek fallback minimal → thinking disabled, matching the old
+      // thinking:false. 10s is roomy for Gemini's ~5.5s primary.
+      reasoningEffort: "minimal",
+      providerOrder: ["gemini", "deepseek"],
     });
     return E1ExamQuestionSchema.parse(JSON.parse(extractJsonObject(result.content)));
   } catch (err) {

@@ -6,12 +6,12 @@ AI 驱动的世代科举模拟游戏。玩家扮演一个家族，历经数代�
 
 | | |
 |:---:|:---:|
-| ![首页](docs/screenshots/01-landing.png) | ![游戏主界面](docs/screenshots/02-gameplay.png) |
-| 首页 | 游戏主界面 |
-| ![随机事件](docs/screenshots/03-event.png) | ![行动选择](docs/screenshots/04-action.png) |
-| 随机事件 | 行动选择 |
-| ![完整 UI](docs/screenshots/05-full-ui.png) | ![结算](docs/screenshots/06-result.png) |
-| 完整 UI | 结算 |
+| ![首页](docs/screenshots/02-gameplay.png) | ![出身选择](docs/screenshots/03-event.png) |
+| 首页 | 出身选择 |
+| ![游戏主界面](docs/screenshots/04-action.png) | ![随机事件](docs/screenshots/01-landing.png) |
+| 游戏主界面 | 随机事件 |
+| ![考试抉择](docs/screenshots/05-full-ui.png) | ![榜单结算](docs/screenshots/06-result.png) |
+| 考试抉择 | 榜单结算 |
 
 ## 核心玩法
 
@@ -78,12 +78,6 @@ lib/
   game/            # 游戏常量、类型、计分
 supabase/          # 数据库迁移
 ```
-
-## 设计理念
-
-- **零等待体验** — AI 事件预生成，玩家操作时无需等待 LLM 响应
-- **匿名游玩** — 无需登录，扫码即玩（Hackathon 演示场景）
-- **中式美学** — 水墨风 UI，宋体/楷体排版，古典配色
 
 ## License
 

@@ -2,7 +2,7 @@
   "id": "random-event-zero-wait",
   "name": "random-event-zero-wait",
   "title": "随机事件 AI 主笔化与零等待",
-  "description": "Make AI the primary author of random events while eliminating perceived wait: harden V1 JSON + add stat-delta guardrails, split advanceTurn so the engine result returns instantly with a diegetic event-loading modal, and background-prefetch all 4 event types so triggers hit cache with ~0 wait.",
+  "description": "Make AI the primary author of random events while eliminating perceived wait: harden V1 JSON + add stat-delta guardrails, split advanceTurn so the engine result returns instantly with a diegetic event-loading modal, and use action-aware background lookahead so likely triggered events hit cache with ~0 wait.",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,

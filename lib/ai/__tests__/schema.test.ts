@@ -105,6 +105,40 @@ describe("V1 stat-delta guardrails (±15)", () => {
     expect(result.success).toBe(true);
   });
 
+  it("coerces a partial check without outcomes to null", () => {
+    const result = V1EventChoiceSchema.parse({
+      id: "b",
+      label: "赌一把",
+      stat_changes: { erudition: 0, fortune: 0, drive: 0, wealth: 0 },
+      narrative_preview: "提示",
+      check: {
+        stat: "fortune",
+        dc: 10,
+      },
+    });
+
+    expect(result.check).toBeNull();
+  });
+
+  it("coerces a check with incomplete outcome tiers to null", () => {
+    const result = V1EventChoiceSchema.parse({
+      id: "b",
+      label: "赌一把",
+      stat_changes: { erudition: 0, fortune: 0, drive: 0, wealth: 0 },
+      narrative_preview: "提示",
+      check: {
+        stat: "fortune",
+        dc: 10,
+        outcomes: {
+          success: { erudition: 0, fortune: 5, drive: 0, wealth: 0 },
+          fail: { erudition: 0, fortune: -5, drive: 0, wealth: 0 },
+        },
+      },
+    });
+
+    expect(result.check).toBeNull();
+  });
+
   it("rejects an out-of-range delta even inside a full V1 event", () => {
     const result = V1EventSchema.safeParse({
       title: "标题",
@@ -118,6 +152,22 @@ describe("V1 stat-delta guardrails (±15)", () => {
       reward: null,
     });
     expect(result.success).toBe(false);
+  });
+
+  it("coerces a null free_input_context to an empty string", () => {
+    const event = V1EventSchema.parse({
+      title: "标题",
+      description: "描述足够长。",
+      choices: [
+        choice({ erudition: 1, fortune: 0, drive: 0, wealth: 0 }),
+        choice({ erudition: 0, fortune: 1, drive: 0, wealth: 0 }),
+      ],
+      allows_free_input: false,
+      free_input_context: null,
+      reward: null,
+    });
+
+    expect(event.free_input_context).toBe("");
   });
 });
 

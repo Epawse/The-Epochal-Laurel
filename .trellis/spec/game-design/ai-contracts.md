@@ -525,22 +525,48 @@ though the soft budget remains 1.5s for telemetry. The daily-life loop therefore
 MUST keep V1 off the `advanceTurn` critical path:
 
 1. `advanceTurn(saveId, actionId)` returns the deterministic engine result first.
-   If the engine rolled an event, it sets `state.pending_event_type` and leaves
-   `state.current_event = null`.
+   If the engine rolled an event, it sets both `state.pending_event_type` and
+   `state.pending_event_action_id`, then leaves `state.current_event = null`.
 2. `generateEventForTurn(saveId)` is the only action that turns
-   `pending_event_type` into `current_event`. It serves from `event_cache[type]`
-   when the stamped `season` + `era` match the now-current state; otherwise it
-   live-generates via V1 as a fallback, then clears the marker.
-3. `prefetchEvents(saveId)` warms all 4 event types during player think-time,
-   using `nextSeason(currentSeason)` as the V1 input season. It MUST reload the
-   save before persisting and only merge cache entries into a still-idle state
-   (same turn/season/era, no current/pending event, no pending relic draft) so a
-   slow prefetch response cannot overwrite a newer turn/event save.
-4. V1 parse/Zod failure retries once with a fresh model call before static
+   `pending_event_type` into `current_event`. It serves from
+   `event_cache[actionId]` only when the cached `action_id`, `event_type`,
+   `turn_number`, `season`, and `era` match the now-current pending marker;
+   otherwise it live-generates via V1 as a fallback, then clears both pending
+   markers.
+3. `prefetchEvents(saveId)` performs action-aware lookahead during player
+   think-time. It simulates each currently available daily action with
+   `advanceSeason(currentState, action.id, createRng(currentState.rng_seed))`,
+   generates V1 content only for simulated actions that actually trigger an
+   event, and caches those events by action id with the simulated post-action
+   turn/season/era. Each action's generated result SHOULD be persisted as soon as
+   that action finishes rather than waiting for the slowest lookahead in the
+   batch. It MUST reload the save before each persist and only merge cache entries
+   into a still-idle state (same turn/season/era, no current/pending event, no
+   pending relic draft) so a slow lookahead response cannot overwrite a newer
+   turn/event save.
+4. `generateEventForTurn(saveId)` SHOULD de-duplicate with in-flight lookahead
+   work for the same `saveId + pending_event_action_id`. If the matching
+   prefetch promise is already running, it may wait briefly for that result and
+   consume it directly when the generated action/type/turn/season/era matches the
+   current pending marker, even if the idle-state guard prevented the prefetch
+   from writing to `event_cache`. The wait window should cover the observed raw
+   low-tier V1 latency (currently about 4-8s in local probes) so an almost-finished
+   background call is not duplicated. If the wait times out or the stamp does not
+   match, live-generate via V1 as the fallback.
+5. V1 parse/Zod failure retries once with a fresh model call before static
    fallback. The schema enforces per-delta caps at the contract layer:
    V1 choice `stat_changes` and all `check.outcomes` entries are ±15; V2
    `eventEval.stat_changes` is ±20. The shared base `StatChangesSchema` remains
    unbounded because engine and exam paths have different contracts.
+6. V1 `check` is optional at the choice boundary. If the model emits an empty or
+   structurally incomplete `check` object (for example `stat` + `dc` without the
+   four outcome tables), parse it as `check: null` and keep the rest of the
+   AI-authored event. If a check is structurally complete, all normal validation
+   still applies; invalid `stat`, `dc`, or out-of-range outcome deltas still fail
+   the V1 parse and trigger the retry/fallback path.
+7. V1 `free_input_context` is optional display guidance. If the model emits
+   `null`, coerce it to an empty string instead of failing the event, because a
+   missing free-input hint should not discard otherwise valid AI-authored content.
 
 The V1 output schema gains two optional fields:
 
@@ -632,6 +658,10 @@ N1 dialogue during `socialize` is also off the `advanceTurn` critical path:
   memory, clears the marker, persists, and returns the generated line.
 - Stale markers are discarded when the NPC is missing/dead or the marker's
   `turn_number` no longer matches `state.turn_number`.
+- Because the frontend may allow normal play while N1 is still running,
+  `generateNpcDialogueForTurn` MUST re-read the save after the AI call and persist
+  only if the pending marker still exactly matches. A stale N1 result is discarded
+  rather than writing an older turn over newer player progress.
 - N1 fallback remains owned by `lib/ai/contracts/npcDialogue.ts`; action callers
   should not surface AI failures as turn failures.
 
@@ -643,11 +673,14 @@ N1 dialogue during `socialize` is also off the `advanceTurn` critical path:
 2. **Max tokens**: 500 per call (most outputs are short)
 3. **Timeout**: 10 seconds hard limit, fallback triggers at timeout
 4. **Rate limiting**: Max 5 synchronous AI calls per player action. Background
-   V1 prefetch deliberately adds up to 4 low-tier calls per idle turn outside
-   the critical path; this is an accepted demo-cost tradeoff to make triggered
-   events feel instant. Breakdown:
+   V1 lookahead deliberately adds up to one low-tier call per currently available
+   daily action whose simulated result would trigger an event; these calls happen
+   outside the critical path. This is the accepted tradeoff for high AI
+   participation with imperceptible player waits, without blindly generating
+   unusable event types. Breakdown:
    - Normal season (no event): 0 synchronous calls; optional deferred N1 after
-     socialize; up to 4 background V1 prefetch calls during player think-time
+     socialize; background V1 lookahead calls only for simulated actions that
+     would trigger an event during player think-time
    - Season with event: 0 synchronous V1 calls on cache hit; live V1 only on
      cache miss/stale marker, plus optional deferred N1 and optional V2
    - Exam turn: E1 + (E2 only if free-text) + R1 = 2-3 calls (fixed-choice answers are scored by formula, no E2)

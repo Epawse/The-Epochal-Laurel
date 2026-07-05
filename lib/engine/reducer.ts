@@ -913,6 +913,7 @@ export function createCharacter(
     npcs: [],
     current_event: null,
     pending_event_type: null,
+    pending_event_action_id: null,
     event_cache: {},
     pending_npc_dialogue: null,
     pending_relic_draft: null,

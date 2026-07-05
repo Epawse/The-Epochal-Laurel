@@ -406,20 +406,35 @@ export type CurrentEvent = z.infer<typeof CurrentEventSchema>;
 
 // ── Prefetched Event Cache (Transient) ──────────────────────────────────────
 
-// One prefetched, fully-mapped event per event type, generated in the background
-// during player think-time so a triggered event is served with ~0 wait. Each entry
-// is stamped with the (predicted next-turn) season+era it was generated for;
-// generateEventForTurn only serves a slot whose stamp matches the now-current
-// season+era, otherwise it falls back to live generation. `.default({})` keeps
-// older saves (missing this field) loading fine.
+// One lookahead, fully-mapped event per action, generated in the background during
+// player think-time. Each entry is stamped with the simulated post-action state;
+// generateEventForTurn only serves a slot whose action/type/turn/season/era match
+// the now-current pending marker, otherwise it falls back to live generation.
+// The cache is transient: missing/legacy/malformed entries are dropped on load
+// instead of failing the whole save.
 const CachedEventSchema = z.object({
   event: CurrentEventSchema,
+  action_id: ActionIdSchema,
+  event_type: EventTypeSchema,
+  turn_number: z.number().int().min(0),
   season: SeasonSchema,
   era: EraSchema,
 });
 export type CachedEvent = z.infer<typeof CachedEventSchema>;
 
-export const EventCacheSchema = z.record(EventTypeSchema, CachedEventSchema).default({});
+export const EventCacheSchema = z
+  .preprocess((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+    const filtered: Record<string, CachedEvent> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (!ActionIdSchema.safeParse(key).success) continue;
+      const parsed = CachedEventSchema.safeParse(entry);
+      if (parsed.success && parsed.data.action_id === key) filtered[key] = parsed.data;
+    }
+    return filtered;
+  }, z.record(ActionIdSchema, CachedEventSchema))
+  .default({});
 export type EventCache = z.infer<typeof EventCacheSchema>;
 
 // ── Pending NPC Dialogue (Transient) ────────────────────────────────────────
@@ -448,9 +463,13 @@ export const GameStateSchema = z.object({
   // this; generateEventForTurn then produces current_event and clears it. Older
   // saves missing this field default to null on load.
   pending_event_type: EventTypeSchema.nullable().default(null),
-  // Background-prefetched events keyed by event type (see EventCacheSchema). Served
-  // by generateEventForTurn on a stamp match; refilled in the background after each
-  // turn/event. Older saves missing this field default to {} on load.
+  // Action id whose turn triggered pending_event_type. Used to consume only the
+  // lookahead event generated for the exact player action. Older saves missing this
+  // field default to null on load.
+  pending_event_action_id: ActionIdSchema.nullable().default(null),
+  // Background lookahead events keyed by action id (see EventCacheSchema). Served
+  // by generateEventForTurn on an action/type/state stamp match; refilled in the
+  // background after each idle point. Older saves missing this field default to {}.
   event_cache: EventCacheSchema,
   // Marker for an N1 NPC dialogue that should be generated after advanceTurn has
   // already returned. Older saves missing this field default to null on load.

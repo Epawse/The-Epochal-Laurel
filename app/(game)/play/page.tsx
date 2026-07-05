@@ -109,14 +109,16 @@ export default function PlayPage() {
   const [narration, setNarration] = useState(
     "新的一天开始了。准备好踏上科举之路吧。"
   );
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [schemeExposed, setSchemeExposed] = useState(false);
+  const [turnPending, setTurnPending] = useState(false);
+  const [followupPending, setFollowupPending] = useState(false);
   // True between a turn flagging a pending event and generateEventForTurn filling
   // it — drives the EventModal's diegetic loading shell.
   const [eventPending, setEventPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Guards background prefetch overlap: only one prefetchEvents request in flight
-  // at a time (each settle/resolve would otherwise stack 4-call bursts).
+  // at a time (each settle/resolve would otherwise stack lookahead bursts).
   const prefetchInFlight = useRef(false);
   const currentGameState = gameState ?? persisted;
 
@@ -126,7 +128,9 @@ export default function PlayPage() {
     }
   }, [gameState]);
 
-  // Initial-load prefetch: warm the first batch of events once a save+state exist
+  const isBusy = turnPending || eventPending;
+
+  // Initial-load prefetch: warm lookahead events once a save+state exist
   // and the player is idle (no event/relic modal). Fires at most once per mount;
   // later refills happen at turn-settle / event-resolve. Inlined here (not via
   // firePrefetch, which is defined after the early return) to keep hook order
@@ -180,12 +184,12 @@ export default function PlayPage() {
   const hasEvent = currentGameState.current_event !== null;
   const hasRelicDraft = currentGameState.pending_relic_draft !== null;
 
-  // Background prefetch trigger. Fired (non-blocking, never throwing into render)
+  // Background lookahead trigger. Fired (non-blocking, never throwing into render)
   // at safe points where the player is between turns and no modal is open:
   // initial load, after a turn settles, and after an event resolves. Skips while
-  // any event/relic modal is open or pending, and guards against overlap so we
-  // never stack 4-call bursts. The server save is the source of truth for the
-  // cache — generateEventForTurn reads it; the client never mirrors event_cache.
+  // any event/relic modal is open or pending. The server save is the source of
+  // truth for the action-aware cache — generateEventForTurn reads it; the client
+  // never mirrors event_cache.
   function firePrefetch(state: GameState) {
     if (!saveId) return;
     if (prefetchInFlight.current) return;
@@ -203,9 +207,10 @@ export default function PlayPage() {
   }
 
   function handleAction(actionId: string) {
-    if (!currentGameState || !saveId || isPending) return;
+    if (!currentGameState || !saveId || isBusy) return;
 
     startTransition(async () => {
+      setTurnPending(true);
       setError(null);
       try {
         const result = await advanceTurn(saveId, actionId);
@@ -231,7 +236,7 @@ export default function PlayPage() {
         // Clear deltas after animation
         setTimeout(() => setDeltas({}), 1500);
 
-        let settledState = result.state;
+        const settledState = result.state;
 
         const shouldGenerateEvent =
           result.eventTrigger &&
@@ -242,43 +247,55 @@ export default function PlayPage() {
           setEventPending(true);
         }
 
-        if (result.pendingNpcDialogue) {
-          try {
-            const dialogueResult = await generateNpcDialogueForTurn(saveId);
-            settledState = dialogueResult.state;
-            setGameState(dialogueResult.state);
-            if (dialogueResult.dialogue) {
-              setNarration(dialogueResult.dialogue);
+        setTurnPending(false);
+
+        // AI follow-ups continue outside the main action pending state. A cache hit
+        // fills the event modal quickly; a miss keeps the diegetic event shell open
+        // without making ordinary turn feedback feel frozen.
+        if (result.pendingNpcDialogue || shouldGenerateEvent) {
+          setFollowupPending(true);
+          void (async () => {
+            let followupState = settledState;
+            try {
+              // Pending event: open the modal in its loading shell immediately,
+              // then fetch the AI event. `eventTrigger` is set while
+              // `current_event` is still null + pending markers are stamped.
+              if (shouldGenerateEvent) {
+                try {
+                  const eventResult = await generateEventForTurn(saveId);
+                  followupState = eventResult.state;
+                  setGameState(eventResult.state);
+                } catch (eventErr) {
+                  // generateEvent self-falls-back to a static event and never
+                  // throws, so reaching here means a transport/save failure.
+                  console.warn("Failed to generate turn event:", eventErr);
+                  setError("暂时无法呈现这桩事，请稍后重试。");
+                } finally {
+                  setEventPending(false);
+                }
+              }
+
+              if (result.pendingNpcDialogue) {
+                try {
+                  const dialogueResult = await generateNpcDialogueForTurn(saveId);
+                  followupState = dialogueResult.state;
+                  setGameState(dialogueResult.state);
+                  if (dialogueResult.dialogue) {
+                    setNarration(dialogueResult.dialogue);
+                  }
+                } catch (dialogueErr) {
+                  console.warn("Failed to generate NPC dialogue:", dialogueErr);
+                }
+              }
+
+              if (!result.characterDied) {
+                firePrefetch(followupState);
+              }
+            } finally {
+              setFollowupPending(false);
             }
-          } catch (dialogueErr) {
-            console.warn("Failed to generate NPC dialogue:", dialogueErr);
-          }
-        }
-
-        // Pending event: open the modal in its loading shell immediately, then
-        // fetch the AI event. `eventTrigger` is set while `current_event` is still
-        // null + `pending_event_type` is stamped on the returned state.
-        if (shouldGenerateEvent) {
-          try {
-            const eventResult = await generateEventForTurn(saveId);
-            settledState = eventResult.state;
-            setGameState(eventResult.state);
-          } catch (eventErr) {
-            // generateEvent self-falls-back to a static event and never throws,
-            // so reaching here means a transport/save failure. Clear the pending
-            // modal gracefully and surface the toast.
-            console.warn("Failed to generate turn event:", eventErr);
-            setError("暂时无法呈现这桩事，请稍后重试。");
-          } finally {
-            setEventPending(false);
-          }
-        }
-
-        // Refill the prefetch cache during the next think-time. Fires only when the
-        // player is now idle (no event/relic modal) and the character is alive;
-        // firePrefetch's own guards skip a mid-event/in-flight case. A cache hit
-        // this turn consumed one slot, so this tops the batch back up.
-        if (!result.characterDied) {
+          })();
+        } else if (!result.characterDied) {
           firePrefetch(settledState);
         }
 
@@ -329,12 +346,14 @@ export default function PlayPage() {
       } catch (e) {
         console.warn("Failed to advance turn:", e);
         setError("暂时无法保存本回合，请稍后重试。");
+        setEventPending(false);
+        setTurnPending(false);
       }
     });
   }
 
   function handleEventChoice(choiceId: string) {
-    if (!currentGameState || !saveId || isPending) return;
+    if (!currentGameState || !saveId || isBusy) return;
 
     startTransition(async () => {
       setError(null);
@@ -362,7 +381,7 @@ export default function PlayPage() {
   }
 
   function handleEventFreeInput(text: string) {
-    if (!currentGameState || !saveId || isPending) return;
+    if (!currentGameState || !saveId || isBusy) return;
 
     startTransition(async () => {
       setError(null);
@@ -384,7 +403,7 @@ export default function PlayPage() {
   }
 
   function handleOpenMerchantShop() {
-    if (!currentGameState || !saveId || isPending || hasEvent || hasRelicDraft) return;
+    if (!currentGameState || !saveId || isBusy || hasEvent || hasRelicDraft) return;
 
     startTransition(async () => {
       setError(null);
@@ -400,7 +419,7 @@ export default function PlayPage() {
   }
 
   function handleRelicChoice(relicId: string) {
-    if (!currentGameState || !saveId || isPending || !hasRelicDraft) return;
+    if (!currentGameState || !saveId || isBusy || !hasRelicDraft) return;
 
     startTransition(async () => {
       setError(null);
@@ -475,7 +494,7 @@ export default function PlayPage() {
               <button
                 type="button"
                 disabled={
-                  isPending ||
+                  isBusy ||
                   hasEvent ||
                   hasRelicDraft ||
                   character.stats.wealth < 15
@@ -501,7 +520,7 @@ export default function PlayPage() {
                 key={action.id}
                 action={action}
                 iconSrc={ACTION_ICONS[action.id] ?? "/assets/action-study.png"}
-                disabled={isPending || hasEvent || hasRelicDraft}
+                disabled={isBusy || hasEvent || hasRelicDraft}
                 onClick={() => handleAction(action.id)}
               />
             ))}
@@ -519,9 +538,9 @@ export default function PlayPage() {
               Fixed height + opacity-only animation avoids layout shift. */}
           <div className="h-[18px] flex items-center" aria-live="polite">
             <AnimatePresence>
-              {isPending && (
+              {(turnPending || followupPending) && (
                 <motion.span
-                  key="advancing"
+                  key={turnPending ? "advancing" : "followup"}
                   className="inline-flex items-center gap-2 font-mono text-[10px] tracking-[0.18em] text-gold-dim uppercase"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -529,7 +548,7 @@ export default function PlayPage() {
                   transition={{ duration: 0.3 }}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-gold-dim animate-[danger-pulse_1.4s_ease-in-out_infinite]" />
-                  推演中…
+                  {turnPending ? "推演中…" : "AI 润色中…"}
                 </motion.span>
               )}
             </AnimatePresence>
@@ -620,7 +639,7 @@ export default function PlayPage() {
           onChoice={handleEventChoice}
           onFreeInput={handleEventFreeInput}
           onClose={handleEventClose}
-          disabled={isPending}
+          disabled={isBusy}
         />
       )}
 
@@ -628,7 +647,7 @@ export default function PlayPage() {
         <RelicDraftModal
           draft={currentGameState.pending_relic_draft}
           onChoose={handleRelicChoice}
-          disabled={isPending}
+          disabled={isBusy}
         />
       )}
     </>

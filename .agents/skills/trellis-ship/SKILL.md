@@ -1,3 +1,8 @@
+---
+name: trellis-ship
+description: "Use when the user explicitly invokes /trellis:ship or asks to ship the current branch through push, PR, CI, self-review, and the squash merge gate."
+---
+
 # Ship
 
 把当前已提交分支送进本仓的远端 PR 闭环:local preflight -> PR body / local review -> pre-push Trellis finalization -> push final head -> Draft PR -> CI wait -> remote review -> squash merge gate -> handoff。

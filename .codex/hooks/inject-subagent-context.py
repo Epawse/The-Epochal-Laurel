@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Multi-Platform Sub-Agent Context Injection Hook
+Codex Sub-Agent Context Injection Hook
+
+Codex-envelope variant of .claude/hooks/inject-subagent-context.py (same
+context-assembly logic; deliberately platform-specific like session-start.py,
+NOT a shared-logic mirror). Differences from the Claude version:
+- recognizes Codex's canonical `spawn_agent` tool_name (matcher alias "Agent")
+  whose prompt field is `message`, not `prompt`
+- emits ONLY the hookSpecificOutput envelope: Codex parses hook stdout with
+  deny_unknown_fields, so the Claude version's extra top-level Cursor/Gemini
+  compatibility fields would make the whole output parse-fail silently
 
 Injects task-specific context when sub-agents (implement, check, research) are spawned.
 
@@ -10,13 +19,14 @@ Core Design Philosophy:
 - Each agent has a dedicated jsonl file defining its context
 - No resume needed, no segmentation, behavior controlled by code not prompt
 
-Trigger: PreToolUse (before Task tool call)
+Trigger: PreToolUse (before spawn_agent tool call)
 
 Context Source: Trellis active task resolver points to task directory
 - implement.jsonl - Implement agent dedicated context
 - check.jsonl     - Check agent dedicated context
 - prd.md          - Requirements document
-- info.md         - Technical design
+- design.md       - Technical design for complex tasks
+- implement.md    - Execution plan for complex tasks
 - codex-review-output.txt - Code Review results
 """
 from __future__ import annotations
@@ -207,7 +217,7 @@ def read_jsonl_entries(base_path: str, jsonl_path: str) -> list[tuple[str, str]]
     if not os.path.exists(full_path):
         print(
             f"[inject-subagent-context] WARN: {jsonl_path} not found — "
-            f"sub-agent will receive only prd.md",
+            f"sub-agent will receive only task artifacts",
             file=sys.stderr,
         )
         return []
@@ -248,7 +258,7 @@ def read_jsonl_entries(base_path: str, jsonl_path: str) -> list[tuple[str, str]]
         print(
             f"[inject-subagent-context] WARN: {jsonl_path} has no curated "
             f"entries (only seed / empty) — sub-agent will receive only "
-            f"prd.md. See workflow.md Phase 1.3 for curation guidance.",
+            f"task artifacts. See workflow.md planning artifact guidance.",
             file=sys.stderr,
         )
 
@@ -276,9 +286,10 @@ def get_implement_context(repo_root: str, task_dir: str) -> str:
     Complete context for Implement Agent
 
     Read order:
-    1. All files in implement.jsonl (dev specs)
+    1. All files in implement.jsonl (spec/research manifests)
     2. prd.md (requirements)
-    3. info.md (technical design)
+    3. design.md if present (technical design)
+    4. implement.md if present (execution plan)
     """
     context_parts = []
 
@@ -292,11 +303,18 @@ def get_implement_context(repo_root: str, task_dir: str) -> str:
     if prd_content:
         context_parts.append(f"=== {task_dir}/prd.md (Requirements) ===\n{prd_content}")
 
-    # 3. Technical design
-    info_content = read_file_content(repo_root, f"{task_dir}/info.md")
-    if info_content:
+    # 3. Technical design for complex tasks
+    design_content = read_file_content(repo_root, f"{task_dir}/design.md")
+    if design_content:
         context_parts.append(
-            f"=== {task_dir}/info.md (Technical Design) ===\n{info_content}"
+            f"=== {task_dir}/design.md (Technical Design) ===\n{design_content}"
+        )
+
+    # 4. Execution plan for complex tasks
+    implement_plan_content = read_file_content(repo_root, f"{task_dir}/implement.md")
+    if implement_plan_content:
+        context_parts.append(
+            f"=== {task_dir}/implement.md (Execution Plan) ===\n{implement_plan_content}"
         )
 
     return "\n\n".join(context_parts)
@@ -304,7 +322,7 @@ def get_implement_context(repo_root: str, task_dir: str) -> str:
 
 def get_check_context(repo_root: str, task_dir: str) -> str:
     """
-    Context for Check Agent: check.jsonl + prd.md
+    Context for Check Agent: check.jsonl + task artifacts.
     """
     context_parts = []
 
@@ -314,6 +332,18 @@ def get_check_context(repo_root: str, task_dir: str) -> str:
     prd_content = read_file_content(repo_root, f"{task_dir}/prd.md")
     if prd_content:
         context_parts.append(f"=== {task_dir}/prd.md (Requirements) ===\n{prd_content}")
+
+    design_content = read_file_content(repo_root, f"{task_dir}/design.md")
+    if design_content:
+        context_parts.append(
+            f"=== {task_dir}/design.md (Technical Design) ===\n{design_content}"
+        )
+
+    implement_plan_content = read_file_content(repo_root, f"{task_dir}/implement.md")
+    if implement_plan_content:
+        context_parts.append(
+            f"=== {task_dir}/implement.md (Execution Plan) ===\n{implement_plan_content}"
+        )
 
     return "\n\n".join(context_parts)
 
@@ -351,8 +381,8 @@ All the information you need has been prepared for you:
 ## Workflow
 
 1. **Understand specs** - All dev specs are injected above, understand them
-2. **Understand requirements** - Read requirements document and technical design
-3. **Implement feature** - Implement following specs and design
+    2. **Understand task artifacts** - Read requirements, technical design if present, and execution plan if present
+    3. **Implement feature** - Implement following specs and task artifacts
 4. **Self-check** - Ensure code quality against check specs
 
 ## Important Constraints
@@ -421,7 +451,7 @@ Finish checklist and requirements:
 ## Workflow
 
 1. **Review changes** - Run `git diff --name-only` to see all changed files
-2. **Verify requirements** - Check each requirement in prd.md is implemented
+	2. **Verify task artifacts** - Check requirements in prd.md and, when present, design.md / implement.md
 3. **Spec sync** - Analyze whether changes introduce new patterns, contracts, or conventions
    - If new pattern/convention found: read target spec file → update it → update index.md if needed
    - If infra/cross-layer change: follow the 7-section mandatory template from update-spec.md
@@ -435,7 +465,8 @@ Finish checklist and requirements:
 - MUST read the target spec file BEFORE editing (avoid duplicating existing content)
 - Do NOT update specs for trivial changes (typos, formatting, obvious fixes)
 - If critical CODE issues found, report them clearly (fix specs, not code)
-- Verify all acceptance criteria in prd.md are met"""
+- Verify all acceptance criteria in prd.md are met
+- Verify design.md and implement.md constraints when those files are present"""
 
 
 
@@ -635,8 +666,16 @@ def _parse_hook_input(input_data: dict) -> tuple[str, str, dict]:
     """
     tool_input = input_data.get("tool_input", {})
 
-    # Standard format: Task/Agent tool with subagent_type
+    # Codex: canonical tool_name is spawn_agent; the task text lives in `message`
     tool_name = input_data.get("tool_name", "") or input_data.get("toolName", "")
+    if tool_name == "spawn_agent":
+        return (
+            _extract_subagent_type(tool_input),
+            tool_input.get("message", ""),
+            tool_input,
+        )
+
+    # Standard format: Task/Agent tool with subagent_type
     if tool_name.lower() in ("task", "agent", "subagent"):
         return (
             _extract_subagent_type(tool_input),
@@ -723,22 +762,18 @@ def main():
     if not context:
         sys.exit(0)
 
-    # Return updated input — use a multi-format output that covers all platforms.
-    # Most platforms ignore unrecognized fields, so we include multiple formats.
-    # The platform picks whichever fields it understands.
-    updated = {**tool_input, "prompt": new_prompt}
+    # Return updated input — Codex envelope ONLY. Codex parses hook stdout with
+    # deny_unknown_fields; any extra top-level compatibility field would make
+    # the entire output invalid and the rewrite would be silently dropped.
+    tool_name = input_data.get("tool_name", "") or input_data.get("toolName", "")
+    prompt_key = "message" if tool_name == "spawn_agent" else "prompt"
+    updated = {**tool_input, prompt_key: new_prompt}
     output = {
-        # Claude Code / Qoder / CodeBuddy / Droid format
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
             "updatedInput": updated,
-        },
-        # Cursor format
-        "permission": "allow",
-        "updated_input": updated,
-        # Gemini format
-        "updatedInput": updated,
+        }
     }
 
     print(json.dumps(output, ensure_ascii=False))

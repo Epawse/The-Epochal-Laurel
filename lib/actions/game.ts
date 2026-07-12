@@ -1,7 +1,14 @@
 "use server";
 
 import type { GameState, Npc, CurrentEvent, Relic, RelicDraft } from "@/lib/game/schema";
-import type { Origin, ExamLevel, EventType } from "@/lib/game/constants";
+import {
+  ACTIONS,
+  EXAM_REWARDS,
+  type ActionId,
+  type Origin,
+  type ExamLevel,
+  type EventType,
+} from "@/lib/game/constants";
 import {
   createCharacter,
   advanceSeason,
@@ -12,6 +19,7 @@ import {
 import { createRng } from "@/lib/engine/rng";
 import type { RollCheckResult } from "@/lib/engine/dice";
 import { applyStatChanges } from "@/lib/engine/balance";
+import { collectModifiers, isActionBlocked } from "@/lib/engine/effects";
 import {
   chooseRelicFromDraft,
   createMerchantRelicDraft,
@@ -23,7 +31,6 @@ import { loadSave, createSave, upsertSave } from "@/lib/db/queries";
 import { generateEvent } from "@/lib/ai/contracts/event";
 import { evaluateEventFreeInput } from "@/lib/ai/contracts/eventEval";
 import { generateNpcDialogue } from "@/lib/ai/contracts/npcDialogue";
-import { nextSeason } from "@/lib/engine/reducer";
 import { log } from "@/lib/log";
 import type { V1Input, V1Event, N1Input } from "@/lib/ai/schema";
 
@@ -194,8 +201,9 @@ export interface AdvanceTurnResult {
   npcDialogue: string | null;
   pendingNpcDialogue: boolean;
   // When an event triggers, this is the event type and `state.current_event` is
-  // still null + `state.pending_event_type` is set: the client opens the event
-  // modal in a loading state and calls generateEventForTurn to fill it.
+  // still null + `state.pending_event_type` / `pending_event_action_id` are set:
+  // the client opens the event modal in a loading state and calls
+  // generateEventForTurn to fill it.
   eventTrigger: string | null;
   statChanges: { erudition: number; fortune: number; drive: number; wealth: number };
   schemeExposed: boolean;
@@ -320,9 +328,11 @@ export async function advanceTurn(
   // generateEventForTurn to produce `current_event` from this marker.
   if (result.eventTrigger && !result.characterDied) {
     result.state.pending_event_type = result.eventTrigger as EventType;
+    result.state.pending_event_action_id = actionId as GameState["pending_event_action_id"];
     result.state.current_event = null;
   } else {
     result.state.pending_event_type = null;
+    result.state.pending_event_action_id = null;
   }
 
   // Persist updated state
@@ -350,6 +360,61 @@ export interface GenerateEventResult {
   // True when the event was served from the background prefetch cache (no LLM on
   // the critical path); false when it was live-generated as graceful fallback.
   servedFromCache: boolean;
+  // True when generateEventForTurn avoided a duplicate live V1 call by waiting
+  // for an already-running prefetch for the same save/action to finish.
+  waitedForPrefetch: boolean;
+}
+
+type EventLookahead = {
+  actionId: ActionId;
+  eventType: EventType;
+  state: GameState;
+};
+
+type GeneratedLookahead = EventLookahead & {
+  event: CurrentEvent;
+};
+
+const PREFETCH_WAIT_TIMEOUT_MS = 8000;
+
+const inFlightEventPrefetches = new Map<string, Promise<GeneratedLookahead>>();
+
+function inFlightPrefetchKey(saveId: string, actionId: ActionId): string {
+  return `${saveId}:${actionId}`;
+}
+
+function isMatchingCacheEntry(
+  state: GameState,
+  actionId: ActionId | null,
+  eventType: EventType
+): actionId is ActionId {
+  if (!actionId) return false;
+  const cached = state.event_cache[actionId];
+  return (
+    cached !== undefined &&
+    cached.action_id === actionId &&
+    cached.event_type === eventType &&
+    cached.turn_number === state.turn_number &&
+    cached.season === state.world.season &&
+    cached.era === state.world.era
+  );
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number
+): Promise<{ timedOut: false; value: T } | { timedOut: true }> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise.then((value) => ({ timedOut: false as const, value })),
+      new Promise<{ timedOut: true }>((resolve) => {
+        timeout = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 // Live-generate a mapped event for a state + type. Calls generateEvent (which
@@ -369,9 +434,10 @@ async function generateMappedEvent(
  * Produce the AI event for a turn whose engine result flagged a pending event.
  * Called by the client right after advanceTurn returns with `eventTrigger` set.
  *
- * Serves from the background prefetch cache when `event_cache[pending_type]` is
- * present AND its stamped season+era match the now-current values (zero LLM on
- * the critical path). On a cache miss/stale stamp it live-generates via
+ * Serves from the action-aware lookahead cache when `event_cache[pending_action]`
+ * is present AND its action/type/turn/season/era stamp matches the now-current
+ * pending marker (zero LLM on the critical path). On a cache miss/stale stamp it
+ * live-generates via
  * generateEvent (which self-falls-back to a static event — it never throws on AI
  * failure). Either way it writes `current_event`, records the title for
  * repetition-avoidance, clears the marker + consumed cache slot, and persists.
@@ -386,65 +452,175 @@ export async function generateEventForTurn(
 
   const eventType = currentState.pending_event_type;
   if (!eventType) {
-    return { state: currentState, event: currentState.current_event, servedFromCache: false };
+    return {
+      state: currentState,
+      event: currentState.current_event,
+      servedFromCache: false,
+      waitedForPrefetch: false,
+    };
   }
+  const actionId = currentState.pending_event_action_id;
+  let stateForServe = currentState;
+  let waitedForPrefetch = false;
+  let inFlightEvent: CurrentEvent | null = null;
 
-  // Serve from prefetch cache only when the stamp matches the CURRENT season+era
-  // (season advances every turn, so a stamp targeting a different season is stale
-  // — e.g. era changed via inheritance between prefetch and use → live fallback).
-  const cached = currentState.event_cache[eventType];
-  const cacheHit =
-    cached !== undefined &&
-    cached.season === currentState.world.season &&
-    cached.era === currentState.world.era;
+  // Serve from lookahead cache only when the stamp matches the exact action and
+  // post-action state now pending. Action-aware keys prevent, for example, a
+  // social event generated for 交游 from being consumed after the player chose 读书.
+  let cacheHit = isMatchingCacheEntry(stateForServe, actionId, eventType);
+
+  // If the player acts while the matching background lookahead is still running,
+  // wait briefly for that same promise instead of firing a duplicate live V1 call.
+  // This converts the common "almost ready" case from a full 6-8s miss into a
+  // short modal wait, while still falling back promptly if the prefetch is slow.
+  if (!cacheHit && actionId) {
+    const inFlight = inFlightEventPrefetches.get(inFlightPrefetchKey(saveId, actionId));
+    if (inFlight) {
+      const waited = await withTimeout(inFlight, PREFETCH_WAIT_TIMEOUT_MS);
+      if (!waited.timedOut) {
+        waitedForPrefetch = true;
+        const latestState = await loadSave(saveId);
+        if (!latestState) throw new Error("save_not_found");
+        stateForServe = latestState;
+        cacheHit = isMatchingCacheEntry(stateForServe, actionId, eventType);
+        const generated = waited.value;
+        const generatedMatchesPending =
+          generated.actionId === actionId &&
+          generated.eventType === eventType &&
+          generated.state.turn_number === stateForServe.turn_number &&
+          generated.state.world.season === stateForServe.world.season &&
+          generated.state.world.era === stateForServe.world.era &&
+          stateForServe.pending_event_type === eventType &&
+          stateForServe.pending_event_action_id === actionId;
+        if (generatedMatchesPending) {
+          inFlightEvent = generated.event;
+        }
+      }
+    }
+  }
 
   let currentEvent: CurrentEvent;
-  if (cacheHit && cached) {
-    currentEvent = cached.event;
-    // Consume the slot so a refill prefetch repopulates it with fresh context.
-    delete currentState.event_cache[eventType];
-    log.info("v1.serve", { source: "cache", eventType });
+  if (cacheHit && actionId) {
+    const cached = stateForServe.event_cache[actionId];
+    if (cached) {
+      currentEvent = cached.event;
+      // Consume the slot so a refill prefetch repopulates it with fresh context.
+      delete stateForServe.event_cache[cached.action_id];
+      log.info("v1.serve", {
+        source: waitedForPrefetch ? "inflight-cache" : "cache",
+        actionId,
+        eventType,
+      });
+    } else {
+      currentEvent = await generateMappedEvent(stateForServe, eventType);
+      cacheHit = false;
+      log.info("v1.serve", { source: "live", actionId, eventType });
+    }
+  } else if (inFlightEvent) {
+    currentEvent = inFlightEvent;
+    if (actionId) {
+      delete stateForServe.event_cache[actionId];
+    }
+    cacheHit = true;
+    log.info("v1.serve", { source: "inflight", actionId, eventType });
   } else {
-    currentEvent = await generateMappedEvent(currentState, eventType);
-    log.info("v1.serve", { source: "live", eventType });
+    currentEvent = await generateMappedEvent(stateForServe, eventType);
+    log.info("v1.serve", { source: "live", actionId, eventType });
   }
 
-  currentState.current_event = currentEvent;
-  currentState.world.events_this_era.push(currentEvent.title);
-  currentState.pending_event_type = null;
+  stateForServe.current_event = currentEvent;
+  stateForServe.world.events_this_era.push(currentEvent.title);
+  stateForServe.pending_event_type = null;
+  stateForServe.pending_event_action_id = null;
 
-  await upsertSave(saveId, currentState);
+  await upsertSave(saveId, stateForServe);
 
-  return { state: currentState, event: currentEvent, servedFromCache: cacheHit };
+  return {
+    state: stateForServe,
+    event: currentEvent,
+    servedFromCache: cacheHit,
+    waitedForPrefetch,
+  };
 }
 
 // ── prefetchEvents ────────────────────────────────────────────────────────────
 
 export interface PrefetchEventsResult {
-  // Event types that now have a cached entry (after this prefetch run).
-  cached: EventType[];
+  // Action ids that now have a cached event entry (after this prefetch run).
+  cached: ActionId[];
   // True when prefetch was skipped because the player is mid-event.
   skipped: boolean;
 }
 
-const ALL_EVENT_TYPES: EventType[] = ["opportunity", "misfortune", "social", "political"];
+function cachedActionIds(state: GameState): ActionId[] {
+  return Object.keys(state.event_cache) as ActionId[];
+}
+
+async function persistLookaheadCacheEntry(
+  saveId: string,
+  snapshot: GameState,
+  entry: GeneratedLookahead
+): Promise<boolean> {
+  const latestState = await loadSave(saveId);
+  if (!latestState) throw new Error("save_not_found");
+  if (
+    latestState.turn_number !== snapshot.turn_number ||
+    latestState.world.season !== snapshot.world.season ||
+    latestState.world.era !== snapshot.world.era ||
+    latestState.current_event ||
+    latestState.pending_event_type ||
+    latestState.pending_relic_draft
+  ) {
+    return false;
+  }
+
+  latestState.event_cache[entry.actionId] = {
+    event: entry.event,
+    action_id: entry.actionId,
+    event_type: entry.eventType,
+    turn_number: entry.state.turn_number,
+    season: entry.state.world.season,
+    era: entry.state.world.era,
+  };
+  await upsertSave(saveId, latestState);
+  return true;
+}
+
+function getOrCreatePrefetchPromise(
+  saveId: string,
+  lookahead: EventLookahead
+): Promise<GeneratedLookahead> {
+  const key = inFlightPrefetchKey(saveId, lookahead.actionId);
+  const existing = inFlightEventPrefetches.get(key);
+  if (existing) return existing;
+
+  const promise = generateMappedEvent(lookahead.state, lookahead.eventType).then((event) => ({
+    ...lookahead,
+    event,
+  }));
+  inFlightEventPrefetches.set(key, promise);
+  promise.finally(() => {
+    if (inFlightEventPrefetches.get(key) === promise) {
+      inFlightEventPrefetches.delete(key);
+    }
+  });
+  return promise;
+}
 
 /**
- * Background warm-up: pre-generate one event per event type during player
- * think-time so a triggered event is served from cache with ~0 wait.
+ * Background lookahead: simulate currently available daily actions and generate
+ * V1 content only for the actions whose deterministic post-action state would
+ * actually trigger an event. This keeps AI-authored events ready for likely
+ * player choices without blindly generating all 4 event types every idle point.
  *
  * The client invokes this as its own non-blocking request (NOT fire-and-forget on
  * the server — Vercel can kill unawaited work after the response). Skips entirely
  * when an event is pending/open so it never clobbers in-flight state or wastes
- * calls. Otherwise it predicts the next-turn context — `nextSeason(currentSeason)`
- * (season advances every turn, so a prefetched event must reference the season the
- * NEXT turn will be in to satisfy the V1 "reference current season/era"
- * constraint) — and generates all 4 types in parallel against a shallow copy whose
- * `world.season = targetSeason`. Before persisting, it reloads the save and only
- * merges the cache into a still-idle state, preventing a slow prefetch response
- * from overwriting a newer turn/event save. generateEvent self-falls-back and
- * never throws, so Promise.all always resolves. Wall-time stays ~one call instead
- * of ~4× serial.
+ * calls. Each generated action is persisted as soon as it finishes, after
+ * reloading the save and confirming the player is still idle; this lets fast
+ * lookaheads become cache hits without waiting for the slowest action. In-flight
+ * action promises are registered so generateEventForTurn can briefly wait for an
+ * almost-finished matching prefetch instead of duplicating the V1 call.
  */
 export async function prefetchEvents(saveId: string): Promise<PrefetchEventsResult> {
   const currentState = await loadSave(saveId);
@@ -452,51 +628,53 @@ export async function prefetchEvents(saveId: string): Promise<PrefetchEventsResu
 
   // Mid-event: do not prefetch (would clobber/waste while the player is choosing).
   if (currentState.current_event || currentState.pending_event_type) {
-    return { cached: Object.keys(currentState.event_cache) as EventType[], skipped: true };
-  }
-
-  const targetSeason = nextSeason(currentState.world.season).season;
-  const targetEra = currentState.world.era;
-
-  // Shallow copy with the predicted next-turn season so buildV1Input references it.
-  const stateForPrefetch: GameState = {
-    ...currentState,
-    world: { ...currentState.world, season: targetSeason },
-  };
-
-  const generated = await Promise.all(
-    ALL_EVENT_TYPES.map((type) => generateMappedEvent(stateForPrefetch, type))
-  );
-
-  const latestState = await loadSave(saveId);
-  if (!latestState) throw new Error("save_not_found");
-  if (
-    latestState.turn_number !== currentState.turn_number ||
-    latestState.world.season !== currentState.world.season ||
-    latestState.world.era !== currentState.world.era ||
-    latestState.current_event ||
-    latestState.pending_event_type ||
-    latestState.pending_relic_draft
-  ) {
-    return { cached: Object.keys(latestState.event_cache) as EventType[], skipped: true };
-  }
-
-  for (let i = 0; i < ALL_EVENT_TYPES.length; i++) {
-    latestState.event_cache[ALL_EVENT_TYPES[i]] = {
-      event: generated[i],
-      season: targetSeason,
-      era: targetEra,
+    return {
+      cached: cachedActionIds(currentState),
+      skipped: true,
     };
   }
 
-  await upsertSave(saveId, latestState);
-  log.info("v1.prefetch", {
-    types: ALL_EVENT_TYPES.length,
-    season: targetSeason,
-    era: targetEra,
+  const modifiers = collectModifiers(currentState.character, currentState.world);
+  const actionLookaheads = ACTIONS.flatMap((action) => {
+    if (isActionBlocked(action.id, modifiers)) return [];
+
+    const rng = createRng(currentState.rng_seed);
+    const result = advanceSeason(currentState, action.id, rng);
+    if (!result.eventTrigger || result.characterDied) return [];
+
+    return [
+      {
+        actionId: action.id,
+        eventType: result.eventTrigger as EventType,
+        state: result.state,
+      },
+    ];
   });
 
-  return { cached: [...ALL_EVENT_TYPES], skipped: false };
+  if (actionLookaheads.length === 0) {
+    return {
+      cached: cachedActionIds(currentState),
+      skipped: false,
+    };
+  }
+
+  const settled = await Promise.all(
+    actionLookaheads.map(async (lookahead) => {
+      const generated = await getOrCreatePrefetchPromise(saveId, lookahead);
+      const persisted = await persistLookaheadCacheEntry(saveId, currentState, generated);
+      return { ...generated, persisted };
+    })
+  );
+  const cached = settled.filter((entry) => entry.persisted).map((entry) => entry.actionId);
+  const skipped = cached.length < settled.length;
+
+  log.info("v1.prefetch", {
+    actions: cached,
+    skippedActions: settled.filter((entry) => !entry.persisted).map((entry) => entry.actionId),
+    events: settled.filter((entry) => entry.persisted).map((entry) => entry.eventType),
+  });
+
+  return { cached, skipped };
 }
 
 // ── generateNpcDialogueForTurn ───────────────────────────────────────────────
@@ -547,19 +725,44 @@ export async function generateNpcDialogueForTurn(
   }
 
   const dialogue = await generateNpcDialogue(buildN1Input(currentState, npc));
-  const npcIdx = currentState.npcs.findIndex((candidate) => candidate.id === npc.id);
-  if (npcIdx >= 0) {
-    addNpcMemory(currentState.npcs[npcIdx], "交游互动", "positive", currentState.turn_number);
-    const rel = currentState.character.relationships.find((r) => r.npc_id === npc.id);
+
+  // The UI does not block ordinary actions while N1 is running. Re-read before
+  // persisting so a slow dialogue call cannot write an older turn over a newer
+  // player action.
+  const latestState = await loadSave(saveId);
+  if (!latestState) throw new Error("save_not_found");
+
+  const latestPending = latestState.pending_npc_dialogue;
+  if (
+    !latestPending ||
+    latestPending.npc_id !== pending.npc_id ||
+    latestPending.turn_number !== pending.turn_number ||
+    latestPending.interaction_type !== pending.interaction_type ||
+    latestState.turn_number !== pending.turn_number
+  ) {
+    return { state: latestState, dialogue: null };
+  }
+
+  const latestNpcIdx = latestState.npcs.findIndex((candidate) => candidate.id === npc.id);
+  const latestNpc = latestNpcIdx >= 0 ? latestState.npcs[latestNpcIdx] : null;
+  if (!latestNpc || !latestNpc.alive) {
+    latestState.pending_npc_dialogue = null;
+    await upsertSave(saveId, latestState);
+    return { state: latestState, dialogue: null };
+  }
+
+  if (latestNpcIdx >= 0) {
+    addNpcMemory(latestState.npcs[latestNpcIdx], "交游互动", "positive", latestState.turn_number);
+    const rel = latestState.character.relationships.find((r) => r.npc_id === npc.id);
     if (rel) {
       rel.affinity = Math.max(-50, Math.min(100, rel.affinity + dialogue.relationship_delta));
     }
   }
-  currentState.pending_npc_dialogue = null;
-  await upsertSave(saveId, currentState);
+  latestState.pending_npc_dialogue = null;
+  await upsertSave(saveId, latestState);
 
   return {
-    state: currentState,
+    state: latestState,
     dialogue: `${npc.name}：「${dialogue.dialogue}」`,
   };
 }
@@ -795,7 +998,6 @@ function npcRoleLabel(role: string): string {
 
 // ── getExamQuestion ──────────────────────────────────────────────────────────
 
-import { EXAM_REWARDS } from "@/lib/game/constants";
 import {
   scoreFixedChoice,
   scoreFreeText,
@@ -806,7 +1008,6 @@ import {
   type RiskCondition,
   type CourtWhims,
 } from "@/lib/engine/exam";
-import { collectModifiers } from "@/lib/engine/effects";
 import { generateExamQuestion } from "@/lib/ai/contracts/examQuestion";
 import { evaluateFreeText } from "@/lib/ai/contracts/judge";
 import { generateNarration } from "@/lib/ai/contracts/narrate";

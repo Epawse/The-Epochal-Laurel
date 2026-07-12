@@ -476,6 +476,8 @@ ADDITIONAL RULES (v2.0):
     - Each outcome's stat changes follow the same ±15 cap
     - Use checks for choices where the outcome SHOULD feel uncertain
     - Safe/guaranteed choices should still use plain stat_changes (no check)
+    - Never emit an empty or partial check object. If you do not want a dice
+      roll, set "check": null or omit the field.
 
 11. For opportunity and social events, you MAY include a "reward" field:
     - "type": "relic_draft" (player picks 1 of 3 relics) | "skill_grant" | "buff"

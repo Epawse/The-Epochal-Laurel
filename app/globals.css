@@ -287,6 +287,40 @@ body::after {
 }
 
 /* ============================================================
+   Narrative Timeline Scroll — themed scroll affordance
+   ============================================================ */
+
+/* The NarrativeTimeline scroll container. The bright OS-default scrollbar clashes
+   with the ink/paper theme, so we hide the native scrollbar (webkit + Firefox +
+   legacy Edge) and instead fade the top/bottom edges with a mask gradient — the
+   soft cutoff hints "there's more to scroll" without any chrome. Pure styling;
+   independent of reduced-motion. */
+.narrative-scroll {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge/IE */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 14px,
+    #000 calc(100% - 14px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 14px,
+    #000 calc(100% - 14px),
+    transparent 100%
+  );
+}
+
+.narrative-scroll::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Edge */
+  width: 0;
+  height: 0;
+}
+
+/* ============================================================
    Responsive — Mobile (375px minimum)
    ============================================================ */
 

@@ -67,6 +67,15 @@ Tier pill (S/A/B/C/D/F) + title chip + court-hint tag.
 - Three sizes, six tier colors
 - Used in leaderboard, palace ranking, topbar
 
+### HoldingsPanel
+
+Daily-loop left-column "持有 · 加成" panel. Pure read of `GameState` — shows what the player currently holds; never computes rules.
+
+- Props: `character: Character`, `world: World`, `onOpenShop: () => void`, `shopDisabled: boolean`
+- Top CTA: merchant-shop entry (算 abacus glyph + 钱庄暗柜 + 「以银钱易奇物」; disabled with 「银两不足（需15）」 when `wealth < 15` or busy) — replaces the old lone text button.
+- Sections (each hidden when empty): 遗物 `relics` (rarity dot common灰/rare玉/legendary金 + name + effect-kind labels + flavor on hover, 传家 tag for the heirloom), 技艺 `skills` (被动/主动 chip + cooldown), 加成·损益 `modifiers` (label + 剩余季; jade/vermillion tone by a conservative effect heuristic, neutral when unsure), 状态 `status_effects` (禁考/丁忧 + 剩余季, vermillion), 特质 `traits` (chips), 世道加成 `world.world_modifiers`.
+- Grows to fill the column (`mt-auto` note below) so the three play columns bottom-align. Enter animation transform+opacity, `useReducedMotion` honored. Reuses chip/border styling + design tokens (no new asset).
+
 ---
 
 ## Interactive Components
@@ -174,13 +183,20 @@ Decorative container with corner brackets.
 - Corner brackets: 4 × `<i>` elements (14×14px, gold-dim border, positioned absolute)
 - Header: vermillion marker bar + title + en subtitle
 
-### NarrativeStrip
+### NarrativeTimeline
 
-Single-line story beat at bottom of daily loop.
+Scrollable, session-accumulated story log in the daily-loop center column. Replaces the old single-line `NarrativeStrip` (deleted): the **newest beat sits at the top** and enters from the top, older history scrolls **down**. Entries enter with a transform+opacity fade-in (`AnimatePresence`, `prefers-reduced-motion` via `useReducedMotion`).
 
-- Content: 叙 seal marker + narrative text + timestamp
-- Background: subtle gradient (paper-2 → paper-1)
-- Border: hairline
+- Props: `entries: NarrativeEntry[]` (from `lib/game/narrativeLog.ts`)
+- Header: 叙 seal marker + 叙事记录 label
+- **Fixed height** `h-[clamp(180px,32vh,300px)]` + `overflow-y-auto` — height is constant (no layout jitter as entries accrue). No auto-scroll: the latest beat is naturally pinned at the top, so reading history is never yanked back. `entries` keeps append order (old → new); the component renders a reversed copy so newest is on top.
+- Scroll container uses the `.narrative-scroll` utility (globals.css): native scrollbar hidden (webkit `::-webkit-scrollbar{display:none}` + Firefox `scrollbar-width:none`); top/bottom edges fade via a `mask-image` gradient to hint scrollability in the ink/paper theme (no bright OS chrome). Pure styling, independent of reduced-motion.
+- Three-state visual layering by `kind`:
+  - `action` (平稳) — compact single line: bone-dim text + small action icon + season label, no border
+  - rich beats — left border in a type color: `event` 朱 (vermillion), `exam` 金 (gold), `npc` 玉 (jade), `inherit` 金 (gold); show title + body + optional dice tier chip + stat-delta chips (jade +/vermillion −)
+  - `era` — centered hairline separator (世道更替)
+  - `pending` (生成中) — `loading-shimmer` skeleton + pulsing dot, replaced in place once the server/AI returns (matched by entry id)
+- Source of truth: `useSessionJSON("narrative_log")` (transient; never written into the `GameState` save). Accumulates across turns + the exam/inherit/era detours; capped at `NARRATIVE_LOG_CAP` (200, oldest dropped). Event interaction still flows through `EventModal`; the timeline carries only the title + outcome summary.
 
 ### SealStamp
 
@@ -209,7 +225,8 @@ components/
 │   ├── InheritanceScreen.tsx
 │   ├── EraTransition.tsx
 │   ├── LeaderboardTable.tsx
-│   └── NarrativeStrip.tsx
+│   ├── NarrativeTimeline.tsx
+│   └── HoldingsPanel.tsx
 └── ui/
     ├── Panel.tsx
     ├── SealStamp.tsx

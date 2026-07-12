@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/motion-patterns.md", "reason": "时间线新条目入场/三态动画必须遵循：Framer Motion transform+opacity、AnimatePresence、禁 animate height、prefers-reduced-motion(useReducedMotion)"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "NarrativeTimeline + NarrativeEntry 组件的写法规范（命名/props/结构/client 组件约定）"}
+{"file": ".trellis/spec/frontend/component-catalog.md", "reason": "登记升级后的 NarrativeTimeline；查现有可复用组件（LoadingShimmer/SealStamp 等）避免重造"}
+{"file": ".trellis/spec/frontend/design-tokens.md", "reason": "三态/类型配色 token：vermillion(事件)/gold(考试·继承)/jade(NPC)/bone-dim(平稳)/paper，避免硬编码色值"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "useSessionJSON('narrative_log') 持久化模式 + 本项目 server-action StrictMode once-guard 约定（06-04-ai 沉淀）"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "sessionStorage 状态 / 跨页会话 handoff 模式（narrative_log 跨 play/exam/inherit 累积）"}

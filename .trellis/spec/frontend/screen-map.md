@@ -54,12 +54,12 @@ Overlays (event modal, result, era transition) are **not routes** — they rende
 
 | Aspect | Detail |
 |--------|--------|
-| Layout | TopBar + 3-column grid (320px | 1fr | 320px) |
-| Left panel | StatPanel: portrait + 4 stat rows + counter-fate tools |
-| Center | 5 action cards (grid-cols-5) + narrative strip |
+| Layout | TopBar + 3-column grid (320px | 1fr | 320px), `items-stretch` — columns bottom-align (center timeline fixed-height; left/right flex-fill) |
+| Left panel | StatPanel (portrait + 4 stat rows) + HoldingsPanel (持有·加成: relics/skills/modifiers/status/traits/world_modifiers + 钱庄暗柜 shop CTA). The old cheat-sheet/榜眼/恩师 placeholders are removed (exam-screen tools; one-line note only). |
+| Center | 5 action cards (grid-cols-5) + NarrativeTimeline (scrollable session log, three-state: 平稳/已结算/生成中) |
 | Right panel | Title/exam status + exam CTA button + era + court hints |
 | Assets | `scholar-young.png`, `action-*.png` (5) |
-| State | Full `GameState` from server, `deltas` (transient), `event` (modal trigger) |
+| State | Full `GameState` from server, `deltas` (transient), `event` (modal trigger), `narrative_log` (transient session log via `useSessionJSON`) |
 | Danger mode | Spirit ≤ 25: portrait desaturates, spirit bar pulses, warning box appears |
 | Actions | Click action → Server Action `advanceTurn()` → may trigger event modal |
 

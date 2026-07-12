@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/motion-patterns.md", "reason": "验收动效合规：transform+opacity、AnimatePresence、无 layout 抖动、reduced-motion 即时切换"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "验收 NarrativeTimeline/NarrativeEntry 组件是否符合规范"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "前端质量基线（验收）"}
+{"file": ".trellis/spec/frontend/design-tokens.md", "reason": "验收三态/类型配色用 token 而非硬编码"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "验收 useSessionJSON 用法正确（SSR 快照、storage 事件、不在 mount effect 里 setState）"}
+{"file": ".trellis/spec/frontend/component-catalog.md", "reason": "验收新组件已登记 + 复用而非重造"}

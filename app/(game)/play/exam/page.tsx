@@ -13,11 +13,13 @@ import type { E1ExamQuestion } from "@/lib/ai/schema";
 import type { ExamResult, ToolResult } from "@/lib/actions/game";
 import { EXAM_LEVEL_LABELS } from "@/lib/game/display";
 import { setSessionJSON, useSessionJSON } from "@/hooks/useSessionJSON";
+import { appendEntry, makeEntryId, type NarrativeEntry } from "@/lib/game/narrativeLog";
 import { getSaveId } from "@/lib/client/saveId";
 
 export default function ExamPage() {
   const router = useRouter();
   const persisted = useSessionJSON<GameState>("game_state");
+  const narrativeLog = useSessionJSON<NarrativeEntry[]>("narrative_log");
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [saveId] = useState<string | null>(() => getSaveId());
   const [examLevel, setExamLevel] = useState<ExamLevel>("county");
@@ -100,6 +102,19 @@ export default function ExamPage() {
           );
           setSessionJSON("palace_result", palaceResult);
           setSessionJSON("game_state", palaceResult.state);
+          // Record the palace-exam beat in the shared narrative log so it persists
+          // back on the play screen.
+          setSessionJSON(
+            "narrative_log",
+            appendEntry(narrativeLog, {
+              id: makeEntryId("exam"),
+              kind: "exam",
+              season: `${EXAM_LEVEL_LABELS.palace} · 第${gameState.world.year}年`,
+              title: EXAM_LEVEL_LABELS.palace,
+              text: "殿试已毕，且待金榜唱名。",
+              status: "settled",
+            })
+          );
           router.push("/palace");
         } else {
           const result = await submitExamAnswer(
@@ -113,6 +128,22 @@ export default function ExamPage() {
           setExamResult(result);
           setGameState(result.state);
           setSessionJSON("game_state", result.state);
+          // Append the exam outcome to the shared narrative log (read back on the
+          // play screen). Title color is keyed to "exam" in NarrativeTimeline.
+          setSessionJSON(
+            "narrative_log",
+            appendEntry(narrativeLog, {
+              id: makeEntryId("exam"),
+              kind: "exam",
+              season: `${EXAM_LEVEL_LABELS[examLevel]} · 第${result.state.world.year}年`,
+              title: result.passed
+                ? `${EXAM_LEVEL_LABELS[examLevel]}得中${result.title ? ` · ${result.title}` : ""}`
+                : `${EXAM_LEVEL_LABELS[examLevel]}落第`,
+              text: result.narration,
+              delta: result.statChanges,
+              status: "settled",
+            })
+          );
         }
       } catch (e) {
         console.warn("Failed to submit exam:", e);

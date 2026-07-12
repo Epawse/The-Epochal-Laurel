@@ -232,6 +232,18 @@ When an era transition occurs:
 
 ```json
 {
+  "pending_event_type": "opportunity | misfortune | social | political | null",
+  "pending_event_action_id": "study | socialize | earn | rest | scheme | null",
+  "event_cache": {
+    "study": {
+      "action_id": "study",
+      "event_type": "opportunity",
+      "turn_number": 12,
+      "season": "summer",
+      "era": "prosperity",
+      "event": { "...": "CurrentEvent" }
+    }
+  },
   "current_event": {
     "id": "uuid",
     "type": "opportunity | misfortune | social | political",
@@ -251,6 +263,23 @@ When an era transition occurs:
   }
 }
 ```
+
+- `advanceTurn` sets `pending_event_type` and `pending_event_action_id` when the
+  deterministic engine rolls an event, while leaving `current_event = null` so
+  the client can show the turn result immediately.
+- `event_cache` is keyed by action id, not event type. Each cache entry must match
+  the pending action, event type, turn number, season, and era before it can be
+  served by `generateEventForTurn`.
+- `prefetchEvents` fills `event_cache` by simulating currently available actions
+  from the current `rng_seed`; it only generates AI content for simulated actions
+  that would actually trigger an event. Cache entries are written per action as
+  soon as that action's AI result finishes, after reloading and confirming the
+  save is still idle.
+- A matching in-flight lookahead result may be consumed directly by
+  `generateEventForTurn` before it reaches `event_cache`, as long as its
+  action/type/turn/season/era stamps match the current pending marker. This
+  prevents a near-complete background V1 call from being duplicated by a live
+  fallback.
 
 ---
 

@@ -438,3 +438,36 @@ Implemented the roguelike overhaul: typed effects/modifiers, relic drafts/shop/h
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Restore saves after domain migration
+
+**Date**: 2026-08-10
+**Task**: Restore saves after domain migration
+**Branch**: `main`
+
+### Summary
+
+Added destination-host save hydration from the existing Supabase save ID, documented the cross-origin reconnection contract, verified 179 tests and a production build, and deployed the fix to laurel.epawse.xyz.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f026e1f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

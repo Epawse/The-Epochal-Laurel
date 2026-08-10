@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify schema matches spec, session reconnection flow compliance, no cookies"}
-{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify server-authority: no action accepts client GameState, replace-not-merge"}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality gates, test coverage expectations"}
-{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend quality checks, lint compliance"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer consistency between DB, actions, and client"}

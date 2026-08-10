@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Code review checklist: schema+fallback+telemetry, boundaries Zod-validated"}
-{"file": ".trellis/spec/game-design/ai-contracts.md", "reason": "V1 acceptance constraints (2-3 choices, stat caps, no repeats, name/season refs)"}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify AI failures degrade to fallback, never throw"}

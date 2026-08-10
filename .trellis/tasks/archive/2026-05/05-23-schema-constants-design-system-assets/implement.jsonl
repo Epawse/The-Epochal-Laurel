@@ -1,7 +1,0 @@
-{"file": ".trellis/spec/game-design/data-model.md", "reason": "Authoritative JSON schema for all game state — defines every field in schema.ts"}
-{"file": ".trellis/spec/game-design/balance.md", "reason": "All numerical constants: origin modifiers, stat boundaries, base stats, title values, action effects"}
-{"file": ".trellis/spec/frontend/design-tokens.md", "reason": "Color palette, typography stacks, spacing — defines the Tailwind theme"}
-{"file": ".trellis/spec/frontend/motion-patterns.md", "reason": "Keyframe definitions for globals.css (era-wipe, danger-pulse, stamp-down)"}
-{"file": ".trellis/spec/game-design/core-loop.md", "reason": "Action categories, exam levels, auxiliary tools — needed for constants.ts"}
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "File layout conventions for lib/game/schema.ts and lib/game/constants.ts"}
-{"file": ".trellis/tasks/05-23-schema-constants-design-system-assets/prd.md", "reason": "Task requirements and acceptance criteria"}

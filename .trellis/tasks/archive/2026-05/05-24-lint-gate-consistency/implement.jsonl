@@ -1,5 +1,0 @@
-{"file": ".trellis/workspace/haoran/2026-05-24-roadmap-completeness-analysis.md", "reason": "Exact findings + file:line checklist for every fix in scope"}
-{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Conventions for the new useSessionJSON hook"}
-{"file": ".trellis/spec/frontend/state-management.md", "reason": "Why the sessionStorage loads exist + the persistence seam the hook must preserve"}
-{"file": ".trellis/spec/game-design/data-model.md", "reason": "NPC role vs relationship-type enum (friend fix) + title semantics"}
-{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Lint/quality bar to hit"}

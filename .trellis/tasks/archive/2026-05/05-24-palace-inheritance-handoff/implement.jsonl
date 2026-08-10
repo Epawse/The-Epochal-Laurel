@@ -1,5 +1,0 @@
-{"file": ".trellis/workspace/haoran/2026-05-24-roadmap-completeness-analysis.md", "reason": "P0 finding and exact broken palace → inheritance path"}
-{"file": ".trellis/spec/frontend/screen-map.md", "reason": "Route contract for palace and inheritance screens"}
-{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Session handoff JSON pattern and invalid-payload behavior"}
-{"file": ".trellis/spec/game-design/core-loop.md", "reason": "Victory continuation and inheritance flow semantics"}
-{"file": ".trellis/spec/backend/index.md", "reason": "Server action orchestration boundaries"}

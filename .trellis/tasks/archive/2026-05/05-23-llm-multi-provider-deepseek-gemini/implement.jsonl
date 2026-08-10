@@ -1,7 +1,0 @@
-{"file": ".trellis/spec/game-design/ai-contracts.md", "reason": "V1 random-event contract: input/output schema, constraints, fallback, model tier + thinking caveat"}
-{"file": ".trellis/spec/game-design/prompt-library.md", "reason": "PT-V1 system prompt template + example output to implement prompts.ts"}
-{"file": ".trellis/spec/game-design/data-model.md", "reason": "Character/World state shapes that the V1 input is built from"}
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "lib/ai/{providers,client,schema,prompts,contracts} layout + naming rules"}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "AI-call own-fallback pattern (generateEvent try/catch -> static pool)"}
-{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "ai.call telemetry fields (contract, model, latencyMs, fallbackUsed, tokens)"}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Zod-validate LLM output + mandatory fallback + no LLM-decided numbers"}

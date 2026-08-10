@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/frontend/component-catalog.md", "reason": "Verify all components match catalog specs"}
-{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Check server/client split, props typing, no-any rule"}
-{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify Zustand store follows patterns"}
-{"file": ".trellis/tasks/05-23-ui-component-library-landing-create/prd.md", "reason": "Acceptance criteria checklist"}

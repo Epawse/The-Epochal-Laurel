@@ -1,7 +1,0 @@
-{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Target schema, session reconnection flow, save-id model, migration conventions"}
-{"file": ".trellis/spec/frontend/state-management.md", "reason": "Server-authority contract, sessionStorage handoff seam, useSessionJSON boundary"}
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend architecture overview, action conventions"}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error patterns for missing/invalid save-id fallback"}
-{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "useSessionJSON hook pattern, client hydration conventions"}
-{"file": ".trellis/spec/game-design/data-model.md", "reason": "GameState shape, version field for blob migration"}
-{"file": ".trellis/spec/frontend/screen-map.md", "reason": "Route flow for cold-start hydration and ?save= override"}

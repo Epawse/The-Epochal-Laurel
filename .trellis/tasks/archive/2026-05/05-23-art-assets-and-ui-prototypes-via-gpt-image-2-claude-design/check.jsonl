@@ -1,6 +1,0 @@
-{"file": ".trellis/tasks/05-23-art-assets-and-ui-prototypes-via-gpt-image-2-claude-design/prd.md", "reason": "Acceptance criteria, current progress, and remaining Claude Design handoff steps to verify"}
-{"file": ".trellis/tasks/05-23-art-assets-and-ui-prototypes-via-gpt-image-2-claude-design/research/art-style-directions.md", "reason": "Verify assets match hybrid layered direction"}
-{"file": ".trellis/tasks/05-23-art-assets-and-ui-prototypes-via-gpt-image-2-claude-design/research/asset-pipeline-organization.md", "reason": "Verify directory structure and naming conventions followed"}
-{"file": ".trellis/tasks/05-23-art-assets-and-ui-prototypes-via-gpt-image-2-claude-design/research/claude-design-prototyping.md", "reason": "Verify Claude Design usage respects uploaded-asset and export guidance"}
-{"file": ".trellis/spec/game-design/core-loop.md", "reason": "Verify prototypes cover all game screens from spec"}
-{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Verify asset organization aligns with frontend structure"}

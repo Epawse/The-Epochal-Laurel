@@ -1,7 +1,0 @@
-{"file": ".trellis/spec/game-design/ai-contracts.md", "reason": "E3 palace rivals contract spec — input/output schemas, model tier, fallback"}
-{"file": ".trellis/spec/game-design/prompt-library.md", "reason": "PT-E3 prompt template for rival generation"}
-{"file": ".trellis/spec/game-design/balance.md", "reason": "Palace exam ranking (no threshold), rival strength by generation"}
-{"file": ".trellis/spec/game-design/core-loop.md", "reason": "Victory tiers and game over conditions"}
-{"file": ".trellis/spec/frontend/screen-map.md", "reason": "Palace ranking screen layout"}
-{"file": ".trellis/spec/frontend/component-catalog.md", "reason": "PalaceRanking component spec"}
-{"file": ".trellis/tasks/05-23-palace-exam-palace-ranking/prd.md", "reason": "Task requirements and acceptance criteria"}

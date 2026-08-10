@@ -1,6 +1,0 @@
-{"file": ".trellis/spec/game-design/balance.md", "reason": "All numerical formulas — authoritative source for every engine function"}
-{"file": ".trellis/spec/game-design/data-model.md", "reason": "Game state shape — Character, World, Dynasty, NPC schemas"}
-{"file": ".trellis/spec/game-design/core-loop.md", "reason": "Game flow context — action→event→exam→inherit cycle"}
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "File layout conventions for lib/engine/"}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Testing and code quality standards"}
-{"file": ".trellis/tasks/05-23-game-engine-core/prd.md", "reason": "Task requirements and acceptance criteria"}

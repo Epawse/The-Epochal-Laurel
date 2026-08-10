@@ -54,12 +54,38 @@ export const V1DiceCheckSchema = z.object({
   }),
 });
 
+const V1_CHECK_OUTCOME_KEYS = ["crit_success", "success", "fail", "crit_fail"] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeV1Check(value: unknown): unknown {
+  if (value == null) return null;
+  if (!isRecord(value)) return null;
+
+  // A dice check is optional. If the model starts one but omits structural
+  // fields, keep the AI-authored event and treat that choice as non-checking.
+  // Complete-but-invalid checks still flow into V1DiceCheckSchema and fail, so
+  // numeric guardrails such as ±15 outcome caps remain enforced.
+  if (!("stat" in value) || !("dc" in value) || !("outcomes" in value)) return null;
+  const outcomes = value.outcomes;
+  if (!isRecord(outcomes)) return null;
+  for (const key of V1_CHECK_OUTCOME_KEYS) {
+    if (!isRecord(outcomes[key])) return null;
+  }
+
+  return value;
+}
+
+const V1NullableDiceCheckSchema = z.preprocess(normalizeV1Check, V1DiceCheckSchema.nullable());
+
 export const V1EventChoiceSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   stat_changes: V1StatChangesSchema,
   narrative_preview: z.string().default(""),
-  check: V1DiceCheckSchema.nullable().optional(),
+  check: V1NullableDiceCheckSchema.optional(),
 });
 
 export const V1EventRewardSchema = z.object({
@@ -74,7 +100,7 @@ export const V1EventSchema = z.object({
   description: z.string().min(1),
   choices: z.array(V1EventChoiceSchema).min(2).max(3),
   allows_free_input: z.boolean().default(true),
-  free_input_context: z.string().default(""),
+  free_input_context: z.string().nullable().default("").transform((value) => value ?? ""),
   reward: V1EventRewardSchema.nullable().optional(),
 });
 export type V1Event = z.infer<typeof V1EventSchema>;

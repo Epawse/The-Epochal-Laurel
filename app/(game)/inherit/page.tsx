@@ -12,6 +12,7 @@ import { EraTransition } from "@/components/game/EraTransition";
 import { ErrorToast } from "@/components/ui/ErrorToast";
 import { ERA_LABELS, formatStatLabel } from "@/lib/game/display";
 import { removeSessionJSON, setSessionJSON, useSessionJSON } from "@/hooks/useSessionJSON";
+import { appendEntry, makeEntryId, type NarrativeEntry } from "@/lib/game/narrativeLog";
 import { getSaveId } from "@/lib/client/saveId";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -55,6 +56,7 @@ const INHERITANCE_REASON_LABELS: Record<InheritanceTrigger, string> = {
 export default function InheritPage() {
   const router = useRouter();
   const data = useSessionJSON<InheritanceData>("inheritance_data");
+  const narrativeLog = useSessionJSON<NarrativeEntry[]>("narrative_log");
   const [selectedHeir, setSelectedHeir] = useState<number | null>(null);
   const [purchasedBlessings, setPurchasedBlessings] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
@@ -142,6 +144,21 @@ export default function InheritPage() {
           } : undefined
         );
 
+        // Record the generation handoff as a separator beat in the shared log.
+        const heirName = result.state.character.name;
+        const heirGen = result.state.character.generation;
+        setSessionJSON(
+          "narrative_log",
+          appendEntry(narrativeLog, {
+            id: makeEntryId("inherit"),
+            kind: "inherit",
+            season: `第${heirGen}世`,
+            title: "薪火相传",
+            text: `${dynasty.family_name}氏 · ${heirName}继业，第${heirGen}世。`,
+            status: "settled",
+          })
+        );
+
         if (result.eraTransitioned && result.newEra) {
           setNewState(result.state);
           setEraTransition({
@@ -164,6 +181,20 @@ export default function InheritPage() {
   function handleEraTransitionContinue() {
     if (newState) {
       setSessionJSON("game_state", newState);
+      // World era changed — drop an era separator beat into the shared log.
+      if (eraTransition) {
+        setSessionJSON(
+          "narrative_log",
+          appendEntry(narrativeLog, {
+            id: makeEntryId("era"),
+            kind: "era",
+            season: `${newState.world.era_year}年目`,
+            title: "世道更替",
+            text: `${ERA_LABELS[eraTransition.from]} → ${ERA_LABELS[eraTransition.to]}`,
+            status: "settled",
+          })
+        );
+      }
       removeSessionJSON("inheritance_data");
       router.push("/play");
     }

@@ -75,7 +75,7 @@ RULES:
 5. The event must NOT instantly kill the character or end the game.
 6. Description: 2-3 vivid sentences. Title: ≤10 Chinese characters.
 7. All player-facing text in Simplified Chinese.
-8. A choice MAY include "check" for a visible dice roll. If a choice includes "check", dc must be an integer 6-16 and "outcomes" MUST contain ALL FOUR tables — crit_success, success, fail, AND crit_fail — each a full stat_changes object. Never emit a partial outcomes object. If you do not want a dice roll, set "check": null instead.
+8. A choice MAY include "check" for a visible dice roll. If a choice includes "check", dc must be an integer 6-16 and "outcomes" MUST contain ALL FOUR tables — crit_success, success, fail, AND crit_fail — each a full stat_changes object. Never emit a partial outcomes object. If you do not want a dice roll, set "check": null instead; do not output an empty or partial check object.
 9. "reward" is optional. Only opportunity/social events may use relic_draft rewards, and relic_ids must come from AVAILABLE RELIC IDs.
 
 OUTPUT FORMAT — respond with strict json in exactly this shape:

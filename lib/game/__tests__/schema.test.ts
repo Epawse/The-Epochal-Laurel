@@ -19,6 +19,7 @@ describe("GameStateSchema", () => {
     delete world.world_modifiers;
     delete dynasty.pending_heirloom;
     delete oldSave.pending_event_type;
+    delete oldSave.pending_event_action_id;
     delete oldSave.event_cache;
     delete oldSave.pending_npc_dialogue;
     delete oldSave.pending_relic_draft;
@@ -33,6 +34,7 @@ describe("GameStateSchema", () => {
     expect(parsed.world.world_modifiers).toEqual([]);
     expect(parsed.dynasty.pending_heirloom).toBeNull();
     expect(parsed.pending_event_type).toBeNull();
+    expect(parsed.pending_event_action_id).toBeNull();
     expect(parsed.event_cache).toEqual({});
     expect(parsed.pending_npc_dialogue).toBeNull();
     expect(parsed.pending_relic_draft).toBeNull();
@@ -69,5 +71,54 @@ describe("GameStateSchema", () => {
 
     expect(parsed.current_event?.choices[0].check ?? null).toBeNull();
     expect(parsed.current_event?.reward ?? null).toBeNull();
+  });
+
+  it("drops legacy or malformed transient event cache entries instead of failing the save", () => {
+    const save = structuredClone(createCharacter("陈", "farming_family", createRng(42))) as Record<string, unknown>;
+    save.event_cache = {
+      opportunity: {
+        event: {
+          id: "legacy_cache",
+          type: "opportunity",
+          title: "旧缓存",
+          description: "旧格式按事件类型缓存",
+          choices: [
+            {
+              id: "a",
+              label: "应下",
+              stat_changes: { erudition: 1, fortune: 0, drive: 0, wealth: 0 },
+              check: null,
+              risk: null,
+              narrative_hint: "",
+            },
+            {
+              id: "b",
+              label: "作罢",
+              stat_changes: { erudition: 0, fortune: 1, drive: 0, wealth: 0 },
+              check: null,
+              risk: null,
+              narrative_hint: "",
+            },
+          ],
+          allows_free_input: false,
+          context_for_judge: { relevant_npcs: [], relevant_items: [] },
+          reward: null,
+        },
+        season: "summer",
+        era: "prosperity",
+      },
+      study: {
+        event: "not-an-event",
+        action_id: "socialize",
+        event_type: "social",
+        turn_number: 1,
+        season: "summer",
+        era: "prosperity",
+      },
+    };
+
+    const parsed = GameStateSchema.parse(save);
+
+    expect(parsed.event_cache).toEqual({});
   });
 });

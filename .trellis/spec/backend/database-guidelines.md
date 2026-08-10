@@ -104,6 +104,73 @@ The game uses anonymous sessions — no login, no auth. Players reconnect to the
 - Save IDs are UUIDs — unguessable, so knowing an ID = owning the save. This is acceptable for a hackathon demo.
 - No rate limiting on save creation for v1 (acceptable for demo scale).
 
+## Scenario: Cross-Origin Save Reconnection
+
+### 1. Scope / Trigger
+
+- Trigger: the public hostname changes, a QR/share link opens on another hostname, or browser `sessionStorage` is otherwise absent while a durable save ID remains available.
+- Boundary: browser storage is origin-scoped; only the opaque save ID crosses origins. Supabase remains authoritative for `GameState`.
+
+### 2. Signatures
+
+```ts
+export function getSaveId(): string | null;
+export async function loadGame(saveId: string): Promise<GameState | null>;
+export function setSessionJSON(key: "game_state", value: GameState): void;
+```
+
+Migration URL contract: `/?save=<uuid>` on the destination hostname.
+
+### 3. Contracts
+
+- `?save=<uuid>` overrides the destination host's local save ID and persists that ID through `getSaveId()`.
+- When `useSessionJSON<GameState>("game_state")` is empty and a save ID exists, the landing route calls `loadGame(saveId)` exactly once per mounted restore attempt.
+- A successful load writes the complete validated state through `setSessionJSON`; query-based handoffs then replace the route with `/play`.
+- Existing session state wins over reconnection and must not be overwritten by a background database read.
+- The URL carries no complete game state, Supabase credentials, or raw error detail.
+
+### 4. Validation & Error Matrix
+
+- No save ID -> remain on the normal landing page; do not query Supabase.
+- Valid ID + valid row -> restore session state -> continue to `/play` for a query handoff.
+- Valid ID + missing row -> show a recoverable missing-save message; new-game flow remains available.
+- Invalid ID, invalid stored state, Supabase unavailable, or action rejection -> show a recoverable retry message; keep the ID and do not fabricate a save.
+- Component unmount during the read -> ignore the late result; do not mutate session state or navigate.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a former-host link supplies a valid UUID, the Zod-validated row loads, and the player reaches the same saved turn on the destination host.
+- Base: a visitor has no save ID and sees the ordinary landing page with the new-game action unchanged.
+- Bad: the database is unavailable during handoff; the landing page reports a temporary restore failure without deleting the only reconnection token.
+
+### 6. Tests Required
+
+- Action unit test: mocked `loadSave(id)` state is returned unchanged by `loadGame(id)`.
+- Component or browser test: valid `?save=` stores the returned state and navigates to `/play`.
+- Component or browser test: missing/rejected loads leave new-game controls usable and expose no raw ID/error.
+- Production migration check: destination hostname serves the release and the restore Server Action path succeeds before removing the former hostname.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const state = JSON.parse(new URLSearchParams(location.search).get("state")!);
+sessionStorage.setItem("game_state", JSON.stringify(state));
+```
+
+This exposes the complete state in URLs, bypasses Zod validation, and creates a second persistence authority.
+
+#### Correct
+
+```ts
+const saveId = getSaveId();
+const state = saveId ? await loadGame(saveId) : null;
+if (state) setSessionJSON("game_state", state);
+```
+
+Only the opaque ID crosses the boundary; the existing validated server action restores the authoritative state.
+
 ## Scenario: Supabase Persistence Fallback
 
 ### 1. Scope / Trigger

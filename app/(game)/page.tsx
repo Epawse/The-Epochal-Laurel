@@ -1,14 +1,59 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SceneBackground } from "@/components/ui/SceneBackground";
 import { LandingTitle } from "@/components/game/LandingTitle";
-import { useSessionJSON } from "@/hooks/useSessionJSON";
+import { loadGame } from "@/lib/actions/game";
+import { getSaveId } from "@/lib/client/saveId";
+import { setSessionJSON, useSessionJSON } from "@/hooks/useSessionJSON";
+
+type RestoreStatus = "idle" | "loading" | "missing" | "failed";
 
 export default function LandingPage() {
   const router = useRouter();
-  const hasSave = useSessionJSON<unknown>("game_state") !== null;
+  const sessionState = useSessionJSON<unknown>("game_state");
+  const hasSave = sessionState !== null;
+  const [restoreStatus, setRestoreStatus] = useState<RestoreStatus>("idle");
+
+  useEffect(() => {
+    if (hasSave) return;
+
+    const saveId = getSaveId();
+    if (!saveId) return;
+
+    let cancelled = false;
+    const arrivedThroughMigrationLink = new URLSearchParams(
+      window.location.search
+    ).has("save");
+    const timer = window.setTimeout(async () => {
+      setRestoreStatus("loading");
+      try {
+        const state = await loadGame(saveId);
+        if (cancelled) return;
+        if (!state) {
+          setRestoreStatus("missing");
+          return;
+        }
+
+        setSessionJSON("game_state", state);
+        setRestoreStatus("idle");
+        if (arrivedThroughMigrationLink) {
+          router.replace("/play");
+        }
+      } catch (error) {
+        if (cancelled) return;
+        console.warn("Failed to restore saved game:", error);
+        setRestoreStatus("failed");
+      }
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [hasSave, router]);
 
   function handleContinue() {
     if (hasSave) {
@@ -64,18 +109,36 @@ export default function LandingPage() {
           {/* Secondary — Continue saved game */}
           <button
             type="button"
-            disabled={!hasSave}
+            disabled={!hasSave || restoreStatus === "loading"}
             onClick={handleContinue}
             className="px-6 py-3 bg-[rgba(34,26,19,0.6)] text-bone border border-hairline font-serif text-base tracking-[0.28em] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:border-gold-dim hover:text-gold hover:bg-[rgba(44,34,24,0.7)]"
             title={!hasSave ? "暂无存档" : undefined}
           >
             继续旧梦
-            {!hasSave && (
+            {restoreStatus === "loading" ? (
+              <span
+                className="block font-mono text-[9px] tracking-[0.12em] text-bone-mute mt-0.5"
+                role="status"
+              >
+                正在寻回存档
+              </span>
+            ) : !hasSave ? (
               <span className="block font-mono text-[9px] tracking-[0.12em] text-bone-mute mt-0.5">
                 暂无存档
               </span>
-            )}
+            ) : null}
           </button>
+
+          {(restoreStatus === "missing" || restoreStatus === "failed") && (
+            <p
+              className="font-serif text-xs leading-relaxed tracking-[0.08em] text-vermillion-light"
+              role="alert"
+            >
+              {restoreStatus === "missing"
+                ? "未找到旧存档，可开创新局。"
+                : "旧存档暂时无法恢复，可稍后重试。"}
+            </p>
+          )}
 
           {/* Link */}
           <Link

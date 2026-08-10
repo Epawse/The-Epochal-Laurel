@@ -3,6 +3,7 @@ import {
   advanceTurn,
   chooseRelicDraft,
   generateHeirsAction,
+  loadGame,
   newGame,
   openMerchantShop,
   previewNewGame,
@@ -63,6 +64,13 @@ describe("game actions", () => {
     expect(result.state.dynasty.family_name).toBe("陈");
     expect(result.state.character.origin).toBe("farming_family");
     expect(result.startingPackage.bonusRelic!.id).toBe(result.state.character.relics[0]?.id);
+  });
+
+  it("loads an existing save for a returning browser", async () => {
+    const state = createCharacter("陈", "farming_family", createRng(42));
+    mockState = state;
+
+    await expect(loadGame("test-save-id")).resolves.toEqual(state);
   });
 
   it("previews the same starting package for the same seed without creating a save", async () => {

@@ -12,7 +12,7 @@
 
 ## Blocked
 
-- （空）
+- [S] WSL 功能分支 checkout 拉平 | owner: `/home/haoran/projects/archive-local/the-epochal-laurel` 的 `feat/random-event-zero-wait` 工作树 | blocked: 存在真实未提交功能、素材与 Trellis 历史改动，收尾不得覆盖 | trigger: 该分支 owner 先收口或备份 dirty 状态 | acceptance: 切回可快进分支并 `pull --ff-only` 至 behind=0，且活跃 checkout 无 Trellis 残留
 
 ## Done log
 

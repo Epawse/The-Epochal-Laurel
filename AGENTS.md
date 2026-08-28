@@ -19,14 +19,14 @@ Server Actions 或环境契约改动跑完整四门。`pnpm test:llm` 会消费�
 密钥已由本地环境提供时运行，不是普通收尾门。
 
 完成权威是测试与生产构建通过；合入 `main` 后还要以 GitHub/Vercel deployment success、部署 SHA 和
-生产 URL 读回为准。README、queue 或 agent 叙述不证明上线。
+生产 URL 读回为准。README、任务状态文本或 agent 叙述不证明上线。
 
 ## 工作与接力
 
 - 一次只让一个 writer 写当前 worktree，先确认 branch 与 dirty state；保留用户已有改动。
 - 应用、schema、依赖或交付行为变更走独立分支 PR；不改运行时的微小文档可在 clean `main` 直推。
-- `.workflow/queue.md` 仅在真实开放工作需要跨对话、跨 harness 或跨机器接手时创建；只写 goal、当前事实、
-  next、blocker/stop 与证据指针。没有开放工作就删除，完成历史归 Git/PR/deployment。
+- 连续上下文由当前 harness 的 plan、worktree、subagent 与原生 handoff 承担。真正独立的交接只传一次性
+  目标、边界、已有证据与完成/停止信号，不在仓内落 queue、current-state 或 handoff tracker。
 
 ## 安全与恢复边界
 

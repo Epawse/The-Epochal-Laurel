@@ -1,5 +1,7 @@
 # The Epochal Laurel
 
+> 已归档（2026-09-27，用户决定）。保留现有源码、分支与本地资料供查阅和恢复；没有当前开发、例行检查、更新或跨机同步任务。用户明确恢复后再开展新工作。
+
 本仓是「百世流芳」Web 游戏的 owner root，拥有 Next.js 应用、游戏引擎、AI 合同、Supabase migrations
 与 Vercel 交付。GitHub 权威为 `Epawse/The-Epochal-Laurel`，生产入口为
 `https://epochal-laurel.vercel.app`；`main` 是生产集成分支。
